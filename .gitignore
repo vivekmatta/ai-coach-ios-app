@@ -1,0 +1,21 @@
+# Xcode user state
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+
+# Build products
+build/
+DerivedData/
+*.o
+*.d
+
+# Credentials / secrets
+*.json
+.env
+google-api-key.json
+
+# macOS
+.DS_Store
