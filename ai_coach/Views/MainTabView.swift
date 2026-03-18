@@ -74,7 +74,6 @@ struct MainTabView: View {
 
 // MARK: – Profile / Settings mini screen
 struct ProfileSettingsView: View {
-    @State private var apiKey: String = UserDefaults.standard.string(forKey: "geminiAPIKey") ?? ""
     @State private var showResetConfirm = false
 
     var profile: UserProfile { PersistenceService.shared.userProfile }
@@ -88,15 +87,6 @@ struct ProfileSettingsView: View {
                     LabeledContent("Name",  value: profile.name.isEmpty  ? "—" : profile.name)
                     LabeledContent("Goals", value: profile.goals.isEmpty  ? "—" : profile.goals)
                     LabeledContent("Exercise \(profile.exerciseDays) days/wk", value: profile.exerciseType)
-                }
-
-                Section("API Key") {
-                    SecureField("Gemini API Key", text: $apiKey)
-                        .foregroundColor(.appText)
-                        .onSubmit { saveAPIKey() }
-
-                    Button("Save Key", action: saveAPIKey)
-                        .foregroundColor(.appAccent)
                 }
 
                 Section("Reset") {
@@ -113,15 +103,10 @@ struct ProfileSettingsView: View {
             Button("Reset", role: .destructive) {
                 PersistenceService.shared.resetAll()
                 Task { await VectorDBService.shared.reset() }
-                // Force app restart behavior by navigating to root
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will clear your profile and restart the onboarding flow on next launch.")
         }
-    }
-
-    private func saveAPIKey() {
-        GeminiService.shared.setAPIKey(apiKey)
     }
 }

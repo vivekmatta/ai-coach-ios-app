@@ -1,15 +1,15 @@
 import SwiftUI
 
 extension Color {
-    static let appBg          = Color(hex: "#001514")
-    static let appBgSecondary = Color(hex: "#021e1c")
-    static let appCard        = Color(hex: "#042b28")
-    static let appAccent      = Color(hex: "#456990")
-    static let appText        = Color(hex: "#D7D9CE")
-    static let appCoral       = Color(hex: "#eb5e55")
-    static let appMint        = Color(hex: "#e4fde1")
-    static let appPurple      = Color(hex: "#c0a9b0")
-    static let appBorder      = Color(hex: "#0a3d38")
+    static let appBg          = Color(hex: "#2C4347")
+    static let appBgSecondary = Color(hex: "#3A5559")
+    static let appCard        = Color(hex: "#476A6F")
+    static let appAccent      = Color(hex: "#519E8A")
+    static let appText        = Color(hex: "#F0F2E8")
+    static let appCoral       = Color(hex: "#ECBEB4")
+    static let appMint        = Color(hex: "#7EB09B")
+    static let appPurple      = Color(hex: "#C5C9A4")
+    static let appBorder      = Color(hex: "#4A7A6D")
 
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)

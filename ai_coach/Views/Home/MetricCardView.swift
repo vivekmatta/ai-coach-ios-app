@@ -1,10 +1,16 @@
 import SwiftUI
 
+private struct CardPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
 struct MetricCardView: View {
     let metric: HealthMetric
     var onTap: () -> Void
-
-    @State private var isPressed = false
 
     var body: some View {
         Button(action: onTap) {
@@ -13,15 +19,15 @@ struct MetricCardView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(metric.color)
                     .frame(width: 3)
-                    .padding(.vertical, 14)
+                    .padding(.vertical, 18)
 
-                VStack(alignment: .leading, spacing: 9) {
+                VStack(alignment: .leading, spacing: 12) {
 
                     // Top row: name + status badge
                     HStack(alignment: .center, spacing: 6) {
                         Text(metric.name)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.appText.opacity(0.55))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.appText.opacity(0.85))
                             .lineLimit(1)
                         Spacer()
                         Text(metric.status.rawValue)
@@ -33,11 +39,10 @@ struct MetricCardView: View {
                             .cornerRadius(6)
                     }
 
-                    // Short insight text (replaces the numeric value)
+                    // Short insight text — full text, no line limit
                     Text(metric.shortInsight)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(.appText.opacity(0.8))
-                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
 
                     // Sparkline
@@ -57,7 +62,7 @@ struct MetricCardView: View {
                 }
                 .padding(.leading, 11)
                 .padding(.trailing, 14)
-                .padding(.vertical, 14)
+                .padding(.vertical, 18)
             }
             .background(Color.appCard)
             .cornerRadius(AppRadius.card)
@@ -65,14 +70,7 @@ struct MetricCardView: View {
                 RoundedRectangle(cornerRadius: AppRadius.card)
                     .stroke(Color.appBorder, lineWidth: 1)
             )
-            .scaleEffect(isPressed ? 0.97 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
         }
-        .buttonStyle(.plain)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded   { _ in isPressed = false }
-        )
+        .buttonStyle(CardPressStyle())
     }
 }

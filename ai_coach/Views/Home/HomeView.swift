@@ -4,7 +4,7 @@ struct HomeView: View {
     @StateObject private var homeVM = HomeViewModel()
     @ObservedObject var chatVM: ChatViewModel
     @State private var showBreakdown = false
-    private let columns = [GridItem(.flexible()), GridItem(.flexible())]
+    private let columns = [GridItem(.flexible())]
 
     var body: some View {
         ZStack {
