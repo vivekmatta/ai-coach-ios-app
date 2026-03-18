@@ -12,9 +12,15 @@ enum AppConstants {
             status: .low,
             trend: [55,53,48,44,42,40,39,37,38,39,40,38],
             color: .appAccent,
-            shortInsight: "27% below baseline — your nervous system is still in recovery mode from accumulated training stress.",
+            shortInsight: "27% below baseline — skip intensity today and prioritize sleep and calm tonight.",
             description: "HRV measures variation between heartbeats. Higher HRV = better recovery. Your 38ms is 27% below your 52ms baseline, indicating accumulated stress or incomplete recovery.",
-            coachPrompt: "Explain my HRV score of 38ms (baseline 52ms) and what it means for my training today."
+            coachPrompt: "Explain my HRV score of 38ms (baseline 52ms) and what it means for my training today.",
+            actions: [
+                MetricAction(icon: "xmark.circle", text: "Skip all intense workouts today", actionType: .info),
+                MetricAction(icon: "figure.walk", text: "Easy walk only — 20 min max", actionType: .info),
+                MetricAction(icon: "moon.fill", text: "Be in bed by 10:00 pm tonight", actionType: .calendar),
+                MetricAction(icon: "cup.and.saucer.fill", text: "No caffeine after 2:00 pm", actionType: .info)
+            ]
         ),
         HealthMetric(
             id: .sleep,
@@ -24,9 +30,15 @@ enum AppConstants {
             status: .belowAvg,
             trend: [83,80,72,74,73,65,67,62,69,70,71,73,61],
             color: .appPurple,
-            shortInsight: "Only 6.2 hrs after an early 5am wake — deep and REM cycles were cut short, slowing muscle repair.",
+            shortInsight: "Only 6.2 hrs after early 5am wake — aim for a 10pm bedtime and screen-free wind-down tonight.",
             description: "Sleep score combines duration, efficiency, deep sleep, REM, and overnight HR. Only 6.2hrs last night (avg 7.5hrs) after waking at 5am. Deep and REM sleep are critical for muscle repair and hormone release.",
-            coachPrompt: "Explain my sleep score of 61/100 and only 6.2 hours last night. How is this affecting my recovery and training?"
+            coachPrompt: "Explain my sleep score of 61/100 and only 6.2 hours last night. How is this affecting my recovery and training?",
+            actions: [
+                MetricAction(icon: "moon.fill", text: "Go to bed by 10:00 pm tonight", actionType: .calendar),
+                MetricAction(icon: "iphone.slash", text: "No screens after 9:00 pm", actionType: .info),
+                MetricAction(icon: "cup.and.saucer.fill", text: "Caffeine cutoff at 2:00 pm", actionType: .info),
+                MetricAction(icon: "wind", text: "5-min box breathing before bed", actionType: .shortcut)
+            ]
         ),
         HealthMetric(
             id: .recovery,
@@ -36,9 +48,15 @@ enum AppConstants {
             status: .needsRest,
             trend: [79,76,63,55,58,49,47,46,44,48,46,48,51,44],
             color: .appCoral,
-            shortInsight: "Red zone — hard training today risks deepening the deficit. Rest or light movement only.",
+            shortInsight: "Red zone (44/100) — rest or a short walk only, no training load today.",
             description: "Recovery Score weighs HRV, resting HR, sleep quality, training load, and stress signals. Score of 44 is in the red zone — attempting hard training risks deepening the recovery deficit.",
-            coachPrompt: "My recovery score is 44/100 (baseline 75/100). Give me a day-by-day plan to get back above 65 within a week."
+            coachPrompt: "My recovery score is 44/100 (baseline 75/100). Give me a day-by-day plan to get back above 65 within a week.",
+            actions: [
+                MetricAction(icon: "zzz", text: "Full rest day — no structured training", actionType: .info),
+                MetricAction(icon: "figure.walk", text: "20-min easy walk max if restless", actionType: .info),
+                MetricAction(icon: "fork.knife", text: "Eat a protein-rich meal today", actionType: .info),
+                MetricAction(icon: "moon.fill", text: "Target 9+ hours sleep tonight", actionType: .calendar)
+            ]
         ),
         HealthMetric(
             id: .rhr,
@@ -48,9 +66,15 @@ enum AppConstants {
             status: .elevated,
             trend: [51,52,54,56,55,57,58,59,58,57,56,58],
             color: .appPurple,
-            shortInsight: "6 bpm above your athlete baseline — a classic sign your body is still under stress and not fully recovered.",
+            shortInsight: "6 bpm above baseline — skip hard efforts, hydrate well, and move lightly today.",
             description: "RHR is measured at complete rest upon waking. Your 52 bpm baseline is healthy for an endurance athlete. Elevated 58 bpm (+12%) is a classic sign of incomplete recovery or sympathetic nervous system dominance.",
-            coachPrompt: "My resting heart rate is 58 bpm, 6 beats above my baseline of 52. What does this mean for today's training?"
+            coachPrompt: "My resting heart rate is 58 bpm, 6 beats above my baseline of 52. What does this mean for today's training?",
+            actions: [
+                MetricAction(icon: "bolt.slash.fill", text: "Skip intervals and tempo efforts", actionType: .info),
+                MetricAction(icon: "figure.walk", text: "10-min gentle walk to stay loose", actionType: .info),
+                MetricAction(icon: "drop.fill", text: "Drink at least 2 L of water today", actionType: .info),
+                MetricAction(icon: "moon.fill", text: "Early bedtime — lights out by 10 pm", actionType: .calendar)
+            ]
         ),
         HealthMetric(
             id: .steps,
@@ -60,9 +84,14 @@ enum AppConstants {
             status: .low,
             trend: [9240,11300,14800,5100,7600,8200,6900,7100,5400,4200,6300,7800,8900,3200],
             color: .appAccent,
-            shortInsight: "Low movement is appropriate given your recovery score. A short walk up to 5,000 steps supports circulation without added stress.",
+            shortInsight: "Low movement is okay today — a short walk to 5,000 steps supports circulation without stress.",
             description: "Steps proxy for daily movement and NEAT. Low step count today is appropriate given recovery score 44/100. Light walking (up to 5,000 steps) supports circulation without adding training stress.",
-            coachPrompt: "I've only done 3,200 steps today. Given my recovery score of 44/100, how much movement should I actually do?"
+            coachPrompt: "I've only done 3,200 steps today. Given my recovery score of 44/100, how much movement should I actually do?",
+            actions: [
+                MetricAction(icon: "figure.walk", text: "Walk to 5,000 steps — stop there", actionType: .info),
+                MetricAction(icon: "timer", text: "Break up sitting every hour with a 2-min walk", actionType: .info),
+                MetricAction(icon: "figure.flexibility", text: "5-min light stretch in the evening", actionType: .shortcut)
+            ]
         ),
         HealthMetric(
             id: .stress,
@@ -72,9 +101,15 @@ enum AppConstants {
             status: .elevated,
             trend: [1,2,3,3,4,5,4,5,4,3,3,3,3,5],
             color: .appCoral,
-            shortInsight: "Elevated cortisol from poor sleep and early wake. Avoid intensity today — prioritize calm and light recovery.",
+            shortInsight: "Elevated cortisol from poor sleep — 5-min breathing now, no caffeine this afternoon.",
             description: "Stress index derived from HRV suppression, elevated RHR, poor sleep, and context. 'High' today driven by 6.2hr sleep and involuntary 5am wake. Chronically elevated cortisol suppresses HRV and inhibits training adaptations.",
-            coachPrompt: "My stress is showing High. What specific things should I do in the next 24 hours to bring stress down and support recovery?"
+            coachPrompt: "My stress is showing High. What specific things should I do in the next 24 hours to bring stress down and support recovery?",
+            actions: [
+                MetricAction(icon: "wind", text: "5-min box breathing — do it now", actionType: .shortcut),
+                MetricAction(icon: "cup.and.saucer.fill", text: "No caffeine after 2:00 pm today", actionType: .info),
+                MetricAction(icon: "figure.walk.circle", text: "10-min evening walk to unwind", actionType: .info),
+                MetricAction(icon: "moon.fill", text: "Lights out by 10:00 pm", actionType: .calendar)
+            ]
         ),
         HealthMetric(
             id: .temp,
@@ -84,9 +119,13 @@ enum AppConstants {
             status: .normal,
             trend: [3,3,3,3,3,3,3,3,3,3,3,3,3,3],
             color: .appMint,
-            shortInsight: "Within normal range — no elevated glucose signal detected from temperature today. Wearable sensor integration coming soon.",
+            shortInsight: "Normal range — no action needed today.",
             description: "Body temperature is a potential non-invasive glucose proxy. High blood glucose can push temperature upward — similar to an infection response. Currently in Normal range, which means no elevated glucose signal from temperature today. Future hardware integration will provide continuous temperature readings from a wearable sensor.",
             coachPrompt: "How does body temperature relate to blood glucose and my overall recovery? What does my current normal temperature tell you?",
+            actions: [
+                MetricAction(icon: "checkmark.circle.fill", text: "No action needed — temp is normal", actionType: .info),
+                MetricAction(icon: "applewatch", text: "Wearable sensor integration coming soon", actionType: .info)
+            ],
             fullWidth: true
         )
     ]

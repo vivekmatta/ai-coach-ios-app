@@ -11,6 +11,7 @@ private struct CardPressStyle: ButtonStyle {
 struct MetricCardView: View {
     let metric: HealthMetric
     var onTap: () -> Void
+    var onAction: () -> Void = {}
 
     var body: some View {
         Button(action: onTap) {
@@ -48,16 +49,23 @@ struct MetricCardView: View {
                     // Sparkline
                     SparklineView(data: metric.trend, color: metric.color)
 
-                    // Bottom row: baseline + tap hint
+                    // Bottom row: baseline + action button
                     HStack {
                         Text(metric.baseline)
                             .font(.system(size: 10))
                             .foregroundColor(.appText.opacity(0.35))
                             .lineLimit(1)
                         Spacer()
-                        Text("Details →")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(metric.color.opacity(0.7))
+                        Button(action: onAction) {
+                            Text("Actions →")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(metric.color)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(metric.color.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.leading, 11)

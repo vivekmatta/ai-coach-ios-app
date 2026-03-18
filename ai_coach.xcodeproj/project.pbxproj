@@ -34,6 +34,9 @@
 		2BB8410CBC9B817E9ADBC07A /* HRVDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8970446BA6CA21F227965CF7 /* HRVDetailView.swift */; };
 		2CD447E1B220307D39B73DAC /* PersistenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68CE492E8F1E347E477D9062 /* PersistenceService.swift */; };
 		2E424D89A33F4D9E9D404266 /* MetricCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCC14F09A63E00644F9FDAF4 /* MetricCardView.swift */; };
+		AA11BB22CC33DD44EE55FF67 /* MetricActionSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF66 /* MetricActionSheetView.swift */; };
+		AA11BB22CC33DD44EE55FF68 /* MetricActionSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF66 /* MetricActionSheetView.swift */; };
+		AA11BB22CC33DD44EE55FF69 /* MetricActionSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF66 /* MetricActionSheetView.swift */; };
 		31BB45DE8414F299EFE1300C /* PlanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FBC43A98084340EEEAF6D15 /* PlanViewModel.swift */; };
 		332B489EB422F8C32C7C4C39 /* HealthLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 708341B4AF1C041AD9B52700 /* HealthLogView.swift */; };
 		338A4FA4AA18DE0D311D2757 /* RHRDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D340A3B75E8CC1DBAC2831 /* RHRDetailView.swift */; };
@@ -191,6 +194,7 @@
 		B5FD4EACADF9D3CBB20CE8F0 /* WorkoutTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorkoutTableView.swift; path = ai_coach/Views/Activity/WorkoutTableView.swift; sourceTree = SOURCE_ROOT; };
 		B7314F5CB79A2ADD63638E6C /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingView.swift; path = ai_coach/Views/Onboarding/OnboardingView.swift; sourceTree = SOURCE_ROOT; };
 		BCC14F09A63E00644F9FDAF4 /* MetricCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MetricCardView.swift; path = ai_coach/Views/Home/MetricCardView.swift; sourceTree = SOURCE_ROOT; };
+		AA11BB22CC33DD44EE55FF66 /* MetricActionSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MetricActionSheetView.swift; path = ai_coach/Views/Home/MetricActionSheetView.swift; sourceTree = SOURCE_ROOT; };
 		C84E40679A577E4187F8C781 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatViewModel.swift; path = ai_coach/ViewModels/ChatViewModel.swift; sourceTree = SOURCE_ROOT; };
 		CA07412F8ADC71D41213B82E /* WellnessBreakdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WellnessBreakdown.swift; path = ai_coach/Models/WellnessBreakdown.swift; sourceTree = SOURCE_ROOT; };
 		D45C41AF968CED905F686E4B /* HealthLogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HealthLogEntry.swift; path = ai_coach/Models/HealthLogEntry.swift; sourceTree = SOURCE_ROOT; };
@@ -205,9 +209,21 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		71EBD8712F688FC400628D7E /* ai_coach */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ai_coach; sourceTree = "<group>"; };
-		71EBD87F2F688FC600628D7E /* ai_coachTests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ai_coachTests; sourceTree = "<group>"; };
-		71EBD8892F688FC600628D7E /* ai_coachUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ai_coachUITests; sourceTree = "<group>"; };
+		71EBD8712F688FC400628D7E /* ai_coach */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ai_coach;
+			sourceTree = "<group>";
+		};
+		71EBD87F2F688FC600628D7E /* ai_coachTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ai_coachTests;
+			sourceTree = "<group>";
+		};
+		71EBD8892F688FC600628D7E /* ai_coachUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ai_coachUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -267,6 +283,7 @@
 				835149C693180FD961B03B9E /* GlucoseInsightView.swift */,
 				8A6B499A8BDB5814A5AF78AF /* HomeView.swift */,
 				BCC14F09A63E00644F9FDAF4 /* MetricCardView.swift */,
+				AA11BB22CC33DD44EE55FF66 /* MetricActionSheetView.swift */,
 				F95A474BAF973A97EF2D3A5C /* SparklineView.swift */,
 				3A1546B18B8C4BA466536FEA /* WellnessGaugeView.swift */,
 				8970446BA6CA21F227965CF7 /* HRVDetailView.swift */,
@@ -467,6 +484,7 @@
 				9AB7455992A5949817406C59 /* GlucoseInsightView.swift in Sources */,
 				750E42F7B20D52AECC3D4393 /* HomeView.swift in Sources */,
 				D2B047CEA41CBC6ECE12B686 /* MetricCardView.swift in Sources */,
+				AA11BB22CC33DD44EE55FF67 /* MetricActionSheetView.swift in Sources */,
 				D1F54E0D8742E735EBA4F7A9 /* SparklineView.swift in Sources */,
 				A6FA4F7283264AECC5F8F0F7 /* WellnessGaugeView.swift in Sources */,
 				2BB8410CBC9B817E9ADBC07A /* HRVDetailView.swift in Sources */,
@@ -517,6 +535,7 @@
 				45D84726A95CF116CE7C2EAD /* GlucoseInsightView.swift in Sources */,
 				D9AD4535960A59063B81EE3F /* HomeView.swift in Sources */,
 				2E424D89A33F4D9E9D404266 /* MetricCardView.swift in Sources */,
+				AA11BB22CC33DD44EE55FF68 /* MetricActionSheetView.swift in Sources */,
 				4CE243A983F06130B76B10BD /* SparklineView.swift in Sources */,
 				DDBD41BE8720266111FEF632 /* WellnessGaugeView.swift in Sources */,
 				5C264B9896385A5C92BF8C28 /* HRVDetailView.swift in Sources */,
@@ -567,6 +586,7 @@
 				D2394A4EA8F223B100639797 /* GlucoseInsightView.swift in Sources */,
 				98D94B68AA7E9ED3D72141F1 /* HomeView.swift in Sources */,
 				E3294C1B9AACF2124AC546CE /* MetricCardView.swift in Sources */,
+				AA11BB22CC33DD44EE55FF69 /* MetricActionSheetView.swift in Sources */,
 				54F64BCFA092DA98B95AB477 /* SparklineView.swift in Sources */,
 				7B274DADA4683EF2260452B8 /* WellnessGaugeView.swift in Sources */,
 				24D24D31AE244D322012D031 /* HRVDetailView.swift in Sources */,

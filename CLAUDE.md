@@ -105,6 +105,7 @@ ai_coach/
         HomeView.swift               ← Main dashboard
         WellnessGaugeView.swift      ← Animated wellness score ring
         MetricCardView.swift         ← Individual metric card
+        MetricActionSheetView.swift  ← Action items bottom sheet (per metric)
         SparklineView.swift          ← Sparkline chart for metric cards
         GlucoseInsightView.swift     ← Glucose risk estimate card
         MetricDetail/
@@ -188,9 +189,17 @@ After all answers, AI generates a personalized welcome message. Profile stored v
 ### 7 Metric Cards (`MetricCardView.swift`)
 Cards: HRV | Sleep Score | Recovery Score | Resting HR | Steps | Stress Level | Body Temperature
 
-Each card: metric name (14pt semibold), full insight text (no line limit), status badge, sparkline, baseline. Tap → `MetricDetailSheetView` (bottom sheet).
+Each card: metric name (14pt semibold), full insight text (observation + action, no line limit), status badge, sparkline, baseline. Tap card body → `MetricDetailSheetView` (detail bottom sheet). Tap **"Actions →"** button → `MetricActionSheetView` (action items sheet).
 
 Cards are displayed in a **single-column** full-width grid (changed from 2-column). The press animation uses `CardPressStyle` (a `ButtonStyle`) instead of `DragGesture` so that scroll gestures are not intercepted.
+
+### Action Sheet (`MetricActionSheetView.swift`)
+Each metric has 3–4 pre-generated action items shown in a `.medium` bottom sheet. Structure:
+- Header: metric name + status badge + insight text
+- Action rows: SF Symbol icon + description text (future: "Add to Calendar", "Start now" buttons)
+- Footer: "Ask Coach for More →" button — pre-fills chat and dismisses sheet
+
+`MetricAction` struct (in `HealthMetric.swift`): `icon` (SF Symbol), `text`, `actionType` (`.info`, `.calendar`, `.shortcut`, `.chat`). Action buttons for non-`.info` types are stubbed but not yet rendered — future integration point.
 
 **Detail sheet contents per metric (mirrors web app drawers):**
 

@@ -4,6 +4,7 @@ struct HomeView: View {
     @StateObject private var homeVM = HomeViewModel()
     @ObservedObject var chatVM: ChatViewModel
     @State private var showBreakdown = false
+    @State private var actionSheetMetric: HealthMetric?
     private let columns = [GridItem(.flexible())]
 
     var body: some View {
@@ -40,6 +41,8 @@ struct HomeView: View {
                         ForEach(regular) { metric in
                             MetricCardView(metric: metric) {
                                 homeVM.selectMetric(metric)
+                            } onAction: {
+                                actionSheetMetric = metric
                             }
                         }
                     }
@@ -47,6 +50,8 @@ struct HomeView: View {
                     ForEach(wide) { metric in
                         MetricCardView(metric: metric) {
                             homeVM.selectMetric(metric)
+                        } onAction: {
+                            actionSheetMetric = metric
                         }
                     }
 
@@ -79,6 +84,12 @@ struct HomeView: View {
                 chatVM.prefill(prompt)
             }
             .presentationDetents([.large])
+        }
+        .sheet(item: $actionSheetMetric) { metric in
+            MetricActionSheetView(metric: metric) { prompt in
+                chatVM.prefill(prompt)
+            }
+            .presentationDetents([.medium])
         }
     }
 
