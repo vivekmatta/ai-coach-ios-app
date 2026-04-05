@@ -47,7 +47,7 @@ This project is now an iPhone-first Expo React Native prototype for AI Coach.
 Main goals:
 - clean white-base mobile UI
 - action-first health coaching
-- Gemini-backed coach chat and plan generation
+- Gemini-backed coach chat
 - retrieval-backed answers using a local vector database
 
 ## Current Stack
@@ -86,10 +86,8 @@ server/
 
 ### Tabs
 - `Today`
-- `Activity`
-- `Plan`
-- `Coach`
-- `Signals`
+- `Progress`
+- `You`
 
 ### UI direction
 - white/light visual base
@@ -97,11 +95,15 @@ server/
 - card-based layout
 - minimal dashboard clutter
 - concise copy
+- fewer visible numbers on primary surfaces
+- 1-2 sentence summaries as the main content pattern
 
-### Coach tab
+### Coach experience
 - uses Gemini through the local proxy
 - retrieval is enabled
-- bottom tab bar hides while keyboard is open
+- launched from a floating coach button on `Today` and `Progress`
+- opens as an in-tab bottom sheet instead of a full-screen tab
+- stays within the current tab context rather than replacing navigation
 - keyboard avoidance is implemented so text input remains visible while typing
 
 ## AI Integration
@@ -111,7 +113,7 @@ server/
 
 Behavior:
 - infers the local proxy base URL from Expo dev host when possible
-- sends `/coach/chat` and `/coach/plan` requests to the local Node backend
+- sends `/coach/chat` requests to the local Node backend
 - falls back to local canned responses if no backend is reachable
 
 ### Server side
@@ -120,7 +122,6 @@ Behavior:
 Endpoints:
 - `GET /health`
 - `POST /coach/chat`
-- `POST /coach/plan`
 
 The proxy:
 - loads Google credentials from `secrets/google-service-account.json`
@@ -174,7 +175,6 @@ At query time:
 
 This is used for both:
 - chat responses
-- plan generation
 
 ## Reference Implementation Used
 
@@ -217,3 +217,4 @@ npm run build:vectordb -- "/Users/vivekmatta/Desktop/Northwestern_University/Win
 - The vector DB is for retrieval context, not raw live watch telemetry storage.
 - If live wearable data is added later, current biometrics should go into structured storage first.
 - The vector DB should hold searchable summaries, logs, historical context, and long-form evidence.
+- The current product direction is chat-first AI: the assistant is easy to access throughout the app, but autonomous action orchestration and calendar control are not implemented yet.
