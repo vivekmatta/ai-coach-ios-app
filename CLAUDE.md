@@ -1,283 +1,219 @@
 # Project Instructions for Claude
 
-## Git: Auto-commit and Push
+## Git Workflow
 
-After every meaningful change (new feature, bug fix, refactor, or any file edit), automatically:
-1. Update `CLAUDE.md` to reflect any new features, removed features, or changed behavior
-2. Stage the relevant changed files **including `CLAUDE.md`**
+After meaningful changes:
+1. Update `CLAUDE.md`
+2. Stage the changed files
 3. Commit with a descriptive message
 4. Push to `origin main`
 
-Do this without waiting to be asked. Do NOT let work accumulate without committing. The goal is to never lose progress.
+This repo has already been migrated away from Xcode/SwiftUI. The current codebase is React Native + Expo only.
+
+## Security
+
+Never commit secrets.
+
+Ignored secret paths and patterns must include:
+- `secrets/`
+- `.env`
+- `google-api-key.json`
+- credential JSON files
+
+Current secret handling:
+- Google service account is stored locally at `secrets/google-service-account.json`
+- The mobile client never reads that file directly
+- The local Node proxy reads it server-side and calls Vertex AI
+
+## How To Run
+
+From the repo root:
 
 ```bash
-git add CLAUDE.md <changed files>
-git commit -m "descriptive message"
-git push origin main
+npm install
+npm run server
+npm start
 ```
 
-**CLAUDE.md must stay in sync with the codebase.** Before committing, review what changed and update the relevant sections — feature descriptions, known limitations, etc. Never let CLAUDE.md describe features that no longer exist or omit features that do.
-
-## Security: Never Expose Secrets
-
-The following files and patterns must ALWAYS be in `.gitignore` and must NEVER be committed or pushed:
-
-- `google-api-key.json` (Google / Vertex AI credentials)
-- Any `*.json` credential or key files
-- Any file containing API keys, tokens, or passwords
-- `.env` files
-- `*.xcuserstate` (Xcode user state)
-- `DerivedData/`
-
-Before every commit, verify these files are not staged:
-```bash
-git status  # confirm no secret files appear
-```
-
-The `.gitignore` must always contain at minimum:
-```
-*.json
-.env
-DerivedData/
-*.xcuserstate
-xcuserdata/
-.build/
-```
-
-Never remove or loosen these gitignore rules.
-
----
-
-## How to Run the App
-
-Open `ai_coach.xcodeproj` in Xcode, select a simulator or device, and press **Run (⌘R)**.
-
-The app requires a valid Gemini/Vertex AI API key configured in `GeminiService.swift`.
-
----
+Phone testing:
+- keep the Mac and iPhone on the same Wi-Fi
+- open Expo Go
+- scan the QR from Expo
 
 ## Project Overview
 
-This is the **iOS app version** of the AI Health Coach — the mobile counterpart to the web app in `Research with Zaretsky/chatbot/`. Both apps share the same product concept, data model, and AI backend (Gemini via Vertex AI), but this version is a native SwiftUI app targeting iPhone.
+This project is now an iPhone-first Expo React Native prototype for AI Coach.
 
-The demo user is "Alex Rivera" (triathlete, age 26) but all AI interactions are personalized to whoever completes onboarding.
+Main goals:
+- clean white-base mobile UI
+- action-first health coaching
+- Gemini-backed coach chat and plan generation
+- retrieval-backed answers using a local vector database
 
-### Tech Stack
-- **Language:** Swift / SwiftUI
-- **Architecture:** MVVM (ViewModels + Views + Models + Services)
-- **AI Model:** Google Gemini (`GeminiService.swift`) — same model as web app; API key configured via Xcode env var `GEMINI_API_KEY` only (no in-app key entry)
-- **RAG:** `VectorDBService.swift` — local vector similarity search over health/workout/meal data
-- **Persistence:** `PersistenceService.swift` — stores user profile and onboarding state locally
-- **Markdown:** `MarkdownRenderer.swift` — renders AI responses with bold/italic/headers
-- **Color palette:** teal/sage theme — `#476A6F` bg, `#519E8A` accent, `#7EB09B` mint, `#C5C9A4` sage, `#ECBEB4` blush
+## Current Stack
 
-### File Structure
-```
-ai_coach/
-  CLAUDE.md                          ← this file
-  ai_coach.xcodeproj/
-  ai_coach/
-    ai_coachApp.swift                ← App entry point
-    Models/
-      AppConstants.swift             ← Shared constants, hardcoded biometrics
-      ChatMessage.swift              ← Chat message model
-      HealthLogEntry.swift           ← Daily health log entry
-      HealthMetric.swift             ← Metric model (HRV, sleep, etc.)
-      UserProfile.swift              ← Onboarding user profile model
-      WellnessBreakdown.swift        ← Wellness score breakdown model
-      WorkoutEntry.swift             ← Workout session model
-    Services/
-      GeminiService.swift            ← Vertex AI / Gemini API calls
-      MarkdownRenderer.swift         ← AI response markdown rendering
-      PersistenceService.swift       ← Local storage for profile/onboarding
-      VectorDBService.swift          ← Local RAG / vector similarity search
-    ViewModels/
-      OnboardingViewModel.swift      ← Onboarding flow logic
-      HomeViewModel.swift            ← Home tab state (metrics, wellness score)
-      ChatViewModel.swift            ← Chat history and AI query logic
-      ActivityViewModel.swift        ← Workout/health log state
-      PlanViewModel.swift            ← Plan generation logic
-    Views/
-      MainTabView.swift              ← Root tab bar (Home / Activity / Plan)
-      Onboarding/
-        OnboardingView.swift         ← 8-question onboarding overlay
-      Home/
-        HomeView.swift               ← Main dashboard
-        WellnessGaugeView.swift      ← Animated wellness score ring
-        MetricCardView.swift         ← Individual metric card
-        MetricActionSheetView.swift  ← Action items bottom sheet (per metric)
-        SparklineView.swift          ← Sparkline chart for metric cards
-        GlucoseInsightView.swift     ← Glucose risk estimate card
-        MetricDetail/
-          MetricDetailSheetView.swift ← Sheet container for metric drilldown
-          HRVDetailView.swift
-          SleepDetailView.swift
-          RHRDetailView.swift
-          StepsDetailView.swift
-          StressDetailView.swift
-          TrendChartView.swift
-      Activity/
-        ActivityView.swift           ← Activity tab root
-        WorkoutTableView.swift       ← Workout session list
-        WorkoutRowView.swift         ← Individual workout row (expandable)
-        WorkoutEditView.swift        ← Inline workout editor
-        FrequencyChartView.swift     ← 14-day dot calendar
-        HealthLogView.swift          ← Collapsible daily health log table
-      Plan/
-        PlanView.swift               ← Personalized plan generator
-      Chat/                          ← Chat panel (used within HomeView)
-    Theme/
-      AppTheme.swift                 ← Colors, fonts, spacing constants
-  ai_coachTests/
-  ai_coachUITests/
+- React Native
+- Expo SDK 54
+- TypeScript
+- AsyncStorage
+- Node local proxy for Vertex AI
+- Vertex AI Gemini for generation
+- Vertex AI embeddings for retrieval
+
+## Repo Structure
+
+```text
+App.tsx
+app.json
+package.json
+src/
+  MobileApp.tsx
+  components.tsx
+  data.ts
+  storage.ts
+  theme.ts
+  types.ts
+  services/
+    coachApi.ts
+server/
+  vertex-proxy.mjs
+  vertex-client.mjs
+  vector-store.mjs
+  build-vector-db.mjs
 ```
 
----
+## Mobile App Behavior
 
-## AI / Gemini Integration (`GeminiService.swift`)
+### Tabs
+- `Today`
+- `Activity`
+- `Plan`
+- `Coach`
+- `Signals`
 
-- Calls the same Gemini model as the web app (Vertex AI)
-- Used by `ChatViewModel` for the chat panel and by `PlanViewModel` for plan generation
-- Accepts a messages array + optional `userProfile` dict injected into the system prompt
-- System prompt rules mirror the web app:
-  - Casual greetings → 1–2 sentence warm reply, no health analysis
-  - Health/training/nutrition/recovery questions → full detailed analysis
+### UI direction
+- white/light visual base
+- calm green/blue/coral accents
+- card-based layout
+- minimal dashboard clutter
+- concise copy
 
----
+### Coach tab
+- uses Gemini through the local proxy
+- retrieval is enabled
+- bottom tab bar hides while keyboard is open
+- keyboard avoidance is implemented so text input remains visible while typing
 
-## RAG (`VectorDBService.swift`)
+## AI Integration
 
-- Local vector similarity search over health, workout, and meal data
-- Used to ground AI responses with relevant context from the user's logs
-- Mirrors the FAISS RAG in the web app's `chatbot.py`
+### Client side
+`src/services/coachApi.ts`
 
----
+Behavior:
+- infers the local proxy base URL from Expo dev host when possible
+- sends `/coach/chat` and `/coach/plan` requests to the local Node backend
+- falls back to local canned responses if no backend is reachable
 
-## Onboarding Flow (`OnboardingView.swift` / `OnboardingViewModel.swift`)
+### Server side
+`server/vertex-proxy.mjs`
 
-**Trigger:** `PersistenceService` — if onboarding not complete, full-screen overlay shown at launch.
+Endpoints:
+- `GET /health`
+- `POST /coach/chat`
+- `POST /coach/plan`
 
-**8 Questions (same as web app):**
-1. Name
-2. Age
-3. Height (e.g., 5'10" or 178 cm)
-4. Weight (e.g., 165 lbs or 75 kg)
-5. Sport or fitness activity
-6. Primary training goal
-7. Specific milestone (lose weight, sleep better, run a 5K, etc.)
-8. Health concerns or injuries
+The proxy:
+- loads Google credentials from `secrets/google-service-account.json`
+- gets a server-side Google access token
+- calls Vertex AI Gemini
+- injects retrieved vector-database context into prompts
 
-After all answers, AI generates a personalized welcome message. Profile stored via `PersistenceService` and used in all subsequent AI calls.
+## Vector Database
 
-**To reset onboarding** (for testing): Delete app data or call `PersistenceService.clearAll()`.
+### What it is
+The vector database is the searchable knowledge base used to ground AI answers.
 
----
+It stores:
+- chunked source text
+- source metadata
+- embedding vectors
+- token counts
 
-## Home Tab (`HomeView.swift`)
+### Current active corpus
+The current vector DB is built from:
 
-### Wellness Score Gauge (`WellnessGaugeView.swift`)
-- Animated ring showing **62/100** (weighted from biometrics)
-- Color: green >75, amber 50–75, red <50 — currently amber
-- Tap → breakdown sheet with each metric's weighted contribution:
-  - HRV: 73% (weight 0.25)
-  - Sleep: 61% (weight 0.25)
-  - Recovery: 44% (weight 0.25)
-  - Resting HR: 90% (weight 0.15)
-  - Steps: 32% (weight 0.05)
-  - Stress: 25% (weight 0.05)
+`/Users/vivekmatta/Desktop/Northwestern_University/Winter 2026/Research with Zaretsky/chatbot/chatbot/data`
 
-### 7 Metric Cards (`MetricCardView.swift`)
-Cards: HRV | Sleep Score | Recovery Score | Resting HR | Steps | Stress Level | Body Temperature
+That includes:
+- `health_log.txt`
+- `meal_log.txt`
+- `user_profile.txt`
+- `workout_log.txt`
 
-Each card: metric name (14pt semibold), full insight text (observation + action, no line limit), status badge, sparkline, baseline. Tap card body → `MetricDetailSheetView` (detail bottom sheet). Tap **"Actions →"** button → `MetricActionSheetView` (action items sheet).
+### Current build behavior
+Implemented in:
+- `server/build-vector-db.mjs`
+- `server/vector-store.mjs`
 
-Cards are displayed in a **single-column** full-width grid (changed from 2-column). The press animation uses `CardPressStyle` (a `ButtonStyle`) instead of `DragGesture` so that scroll gestures are not intercepted.
+Behavior:
+- ingests a file or directory
+- for the current app, directory ingestion is used
+- parses `.txt` and `.pdf`
+- chunks text in a style similar to the reference chatbot app
+- uses Vertex embeddings (`gemini-embedding-001`)
+- stores the built DB at:
 
-### Action Sheet (`MetricActionSheetView.swift`)
-Each metric has 3–4 pre-generated action items shown in a `.medium` bottom sheet. Structure:
-- Header: metric name + status badge + insight text
-- Action rows: SF Symbol icon + description text (future: "Add to Calendar", "Start now" buttons)
-- Footer: "Ask Coach for More →" button — pre-fills chat and dismisses sheet
+`data/vector-db/coach-data-vectors.json`
 
-`MetricAction` struct (in `HealthMetric.swift`): `icon` (SF Symbol), `text`, `actionType` (`.info`, `.calendar`, `.shortcut`, `.chat`). Action buttons for non-`.info` types are stubbed but not yet rendered — future integration point.
+### Retrieval behavior
+At query time:
+1. embed the user’s query
+2. compare it to stored chunk embeddings
+3. retrieve the top relevant chunks
+4. include those chunks in the Gemini prompt
 
-**Detail sheet contents per metric (mirrors web app drawers):**
+This is used for both:
+- chat responses
+- plan generation
 
-| Metric | Enhanced Panel |
-|---|---|
-| HRV | Autonomic balance bar (sympathetic 65% vs parasympathetic 35%), 7-day table, contributing factors |
-| Sleep | Stages donut (Deep 18%, REM 22%, Light 45%, Awake 15%), bedtime/wake times, streak |
-| Recovery | Contribution bars: HRV 38%, Sleep 45%, Stress 30%, RHR 72% |
-| Resting HR | Dual-line chart vs 52 bpm baseline |
-| Steps | Hourly distribution bars, active minutes, weekly avg |
-| Stress | Day timeline (Morning High → Night —), contributing factors |
-| Body Temperature | Qualitative "Normal" — future wearable sensor |
+## Reference Implementation Used
 
-All sheets: trend chart, "What This Means", "Ask Coach About This" button (pre-fills chat).
+The vector DB design was aligned to the reference project at:
 
-### Glucose Insight Card (`GlucoseInsightView.swift`)
-- Biometric-based qualitative glucose risk estimate ("Elevated Risk")
-- 3 signal rows: Sleep / Stress / HRV with one-phrase notes
-- "Ask Coach" button — pre-fills chat with glucose query
-- Disclaimer: no sensor required, qualitative only
+`/Users/vivekmatta/Desktop/Northwestern_University/Winter 2026/Research with Zaretsky/chatbot`
 
-### Chat Panel
-- Embedded in Home tab
-- Rolling history (last 10 messages) + `userProfile` sent to Gemini on each query
-- Typing indicator, quick prompt buttons, markdown rendering via `MarkdownRenderer`
+What was mirrored conceptually:
+- corpus comes from the `chatbot/data` folder, not an arbitrary PDF
+- chunking is file/document based
+- retrieval is used to provide evidence to the coach
 
----
+What is different here:
+- the reference app uses Python + LangChain + FAISS + `sentence-transformers/all-MiniLM-L6-v2`
+- this app uses Node + Vertex embeddings + JSON-backed vector storage
 
-## Activity Tab (`ActivityView.swift`)
+Reason:
+- easier fit with the Expo/Node stack already running in this repo
+- no Python/LangChain dependency required for the mobile app flow
 
-**Summary strip:** Total Workouts (9) | Total Distance (55.1 mi) | Total Active Time (7h 55m)
+## Commands
 
-**Frequency Chart (`FrequencyChartView.swift`):** 14-day dot calendar (Feb 27 – Mar 12). Dot colors: run=blue, swim=teal, brick=orange, yoga=green, rest=empty.
+Run local proxy:
+```bash
+npm run server
+```
 
-**Workout Table (`WorkoutTableView.swift`):** 9 entries from `AppConstants` (matching `workout_log.txt`):
-- Tap row → expands with full notes
-- Edit → inline form, Save updates local array
-- Delete → confirm, removes from array (in-memory only, no server sync)
+Run Expo:
+```bash
+npm start
+```
 
-**Health Log (`HealthLogView.swift`):** Collapsible, 14 entries. Tap row → daily notes.
+Rebuild vector DB from the reference data folder:
+```bash
+npm run build:vectordb -- "/Users/vivekmatta/Desktop/Northwestern_University/Winter 2026/Research with Zaretsky/chatbot/chatbot/data"
+```
 
----
+## Important Notes
 
-## Plan Tab (`PlanView.swift`)
-
-**Quick-start chips** (4 preset prompts):
-- "Full recovery & training plan"
-- "Fix my sleep"
-- "This week's training schedule"
-- "Marathon in 4 weeks — full plan"
-
-**Generate Plan flow:**
-1. User types request (or picks chip)
-2. `PlanViewModel` reads stored `userProfile` + full biometric context
-3. Constructs prompt with real name, sport, goal, milestone, concerns + biometrics
-4. Calls `GeminiService` via `/coach-query` equivalent
-5. Response rendered with markdown in plan display area
-6. Buttons: Regenerate | Refine in Chat (switches to Home tab, pre-fills chat)
-
----
-
-## Hardcoded Demo Biometrics (in `AppConstants.swift`)
-
-These mirror the web app's hardcoded values (March 12, 2026):
-- HRV: 38ms (baseline 52ms) — Low
-- Sleep Score: 61/100 (baseline 80/100) — Below Average
-- Recovery Score: 44/100 (baseline 75/100) — Needs Rest
-- Resting HR: 58 bpm (baseline 52 bpm) — Elevated
-- Steps: 3,200 (goal 10,000) — Low
-- Stress: High
-- SpO2: 97%
-
----
-
-## Known Limitations / Future Work
-
-- Biometric values are **hardcoded** — replace `AppConstants` metrics with live HealthKit or wearable sensor reads when hardware arrives
-- Workout edits/deletions are **in-memory only** — page re-launch resets to original data; `PersistenceService` should be extended to persist workout edits
-- Glucose risk is **deterministic from hardcoded biometrics** — will become dynamic with real sensor data
-- Body Temperature is qualitative "Normal" — future wearable sensor will provide continuous values
-- No backend sync — this app is fully local/on-device; the web app's Flask server is not called
+- The vector DB is for retrieval context, not raw live watch telemetry storage.
+- If live wearable data is added later, current biometrics should go into structured storage first.
+- The vector DB should hold searchable summaries, logs, historical context, and long-form evidence.

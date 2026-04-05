@@ -1,21 +1,18 @@
-# Xcode user state
-*.xcuserstate
-xcuserdata/
-*.xccheckout
-*.moved-aside
-*.hmap
-*.ipa
-
-# Build products
-build/
-DerivedData/
-*.o
-*.d
-
 # Credentials / secrets
 *.json
 .env
 google-api-key.json
+secrets/
+!package.json
+!package-lock.json
+!app.json
+!tsconfig.json
 
 # macOS
 .DS_Store
+
+# Node / Expo
+node_modules/
+.expo/
+.expo-shared/
+dist/

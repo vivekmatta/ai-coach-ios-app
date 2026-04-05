@@ -1,0 +1,31 @@
+{
+  "name": "ai-coach-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "build:vectordb": "node server/build-vector-db.mjs",
+    "server": "node server/vertex-proxy.mjs",
+    "dev": "node server/vertex-proxy.mjs & expo start",
+    "start": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "^54.0.0",
+    "expo-asset": "~12.0.12",
+    "expo-status-bar": "~3.0.9",
+    "google-auth-library": "^10.6.2",
+    "pdf-parse": "^2.4.5",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@types/react": "^19.1.4",
+    "typescript": "~5.7.2"
+  }
+}
