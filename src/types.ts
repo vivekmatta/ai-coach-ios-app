@@ -104,3 +104,91 @@ export interface SensorDefinition {
   purpose: string;
   notes: string;
 }
+
+export type HealthTone = "good" | "caution" | "alert" | "neutral";
+
+export interface MockFixtureOption {
+  id: string;
+  label: string;
+  summary: string;
+}
+
+export interface HealthMetricCard {
+  id: string;
+  label: string;
+  value: string;
+  context: string;
+  tone: HealthTone;
+}
+
+export interface HealthInsight {
+  title: string;
+  text: string;
+  tone: HealthTone;
+}
+
+export interface HealthActionItem {
+  title: string;
+  text: string;
+}
+
+export interface RiskFlag {
+  title: string;
+  text: string;
+}
+
+export interface SyncStatus {
+  syncedAt: string;
+  storageWindowDays: number;
+  stale: boolean;
+  label: string;
+}
+
+export interface LatestHealthDay {
+  date: string;
+  recoveryScore: number;
+  sleepScore: number;
+  sleepDurationMinutes: number;
+  restingHeartRate: number;
+  hrv: number;
+  hrvBaseline: number;
+  steps: number;
+  stepGoal: number;
+  stressScore: number;
+  stressLabel: string;
+  temperatureDeltaC: number;
+  spo2Average: number;
+  bloodPressure: string | null;
+  glucoseProxy: string;
+  nitricOxideProxy: string;
+}
+
+export interface LatestHealthResponse {
+  scenarioId: string;
+  scenarioLabel: string;
+  scenarioSummary: string;
+  availableFixtures: MockFixtureOption[];
+  syncStatus: SyncStatus;
+  headline: string;
+  summary: string;
+  latestDay: LatestHealthDay;
+  insights: HealthInsight[];
+  riskFlags: RiskFlag[];
+  actionPlan: HealthActionItem[];
+  metricCards: HealthMetricCard[];
+}
+
+export interface HealthTimelinePoint {
+  date: string;
+  recoveryScore: number;
+  sleepScore: number;
+  hrv: number;
+  steps: number;
+  stressScore: number;
+}
+
+export interface HealthTimelineResponse {
+  scenarioId: string;
+  trendSummary: string;
+  points: HealthTimelinePoint[];
+}

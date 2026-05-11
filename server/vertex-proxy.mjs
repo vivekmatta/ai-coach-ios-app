@@ -1,5 +1,12 @@
 import { createServer } from "node:http";
 
+import { buildDailyBrief, buildHealthPromptContext, buildTimeline } from "./coach-engine.mjs";
+import {
+  getAvailableMockFixtures,
+  getHealthState,
+  importHealthPayload,
+  importMockFixture,
+} from "./health-data-store.mjs";
 import {
   formatRetrievedContext,
   loadVectorDb,
@@ -34,6 +41,24 @@ async function readJsonBody(req) {
 
   const raw = Buffer.concat(chunks).toString("utf8");
   return raw ? JSON.parse(raw) : {};
+}
+
+async function safeVertexStatus() {
+  try {
+    const { projectId, chatModel, location, credentialsPath } = await getVertexConfig();
+    return {
+      configured: true,
+      projectId,
+      model: chatModel,
+      location,
+      credentialsPath,
+    };
+  } catch (error) {
+    return {
+      configured: false,
+      error: error instanceof Error ? error.message : "Vertex AI is not configured.",
+    };
+  }
 }
 
 function firstName(profile = {}) {
@@ -81,6 +106,8 @@ function buildPlanPrompt(prompt, profile, daily) {
 }
 
 const server = createServer(async (req, res) => {
+  const requestUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+
   if (req.method === "OPTIONS") {
     res.writeHead(204, corsHeaders);
     res.end();
@@ -88,17 +115,14 @@ const server = createServer(async (req, res) => {
   }
 
   try {
-    if (req.method === "GET" && req.url === "/health") {
-      const { projectId, chatModel, location, credentialsPath } = await getVertexConfig();
+    if (req.method === "GET" && requestUrl.pathname === "/health") {
+      const vertex = await safeVertexStatus();
       const hasVectorDb = await vectorDbExists();
       const db = hasVectorDb ? await loadVectorDb() : null;
       writeJson(res, 200, {
         ok: true,
-        provider: "vertex-ai",
-        projectId,
-        model: chatModel,
-        location,
-        credentialsPath,
+        provider: vertex.configured ? "vertex-ai" : "local-only",
+        vertex,
         vectorDb: hasVectorDb
           ? {
               sourcePath: db.sourcePath,
@@ -110,13 +134,45 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "POST" && req.url === "/coach/chat") {
+    if (req.method === "GET" && requestUrl.pathname === "/health-data/latest") {
+      const state = await getHealthState();
+      writeJson(res, 200, buildDailyBrief(state, { availableFixtures: getAvailableMockFixtures() }));
+      return;
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/health-data/timeline") {
+      const state = await getHealthState();
+      writeJson(res, 200, buildTimeline(state));
+      return;
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/health-data/import-mock") {
+      const body = await readJsonBody(req);
+      const state = body.fixtureId
+        ? await importMockFixture(body.fixtureId)
+        : await importHealthPayload(body);
+      writeJson(res, 200, buildDailyBrief(state, { availableFixtures: getAvailableMockFixtures() }));
+      return;
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/coach/daily-brief") {
+      const state = await getHealthState();
+      writeJson(res, 200, buildDailyBrief(state, { availableFixtures: getAvailableMockFixtures() }));
+      return;
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/coach/chat") {
       const body = await readJsonBody(req);
       const message = body.message || "Give me a practical coaching response for today.";
       const contextChunks = await retrieveRelevantChunks(message);
       const context = formatRetrievedContext(contextChunks);
+      const state = await getHealthState();
       const text = await callVertexGenerate({
-        systemInstruction: [buildSystemInstruction(body.profile, "chat"), context ? `Relevant research context:\n${context}` : ""]
+        systemInstruction: [
+          buildSystemInstruction(body.profile, "chat"),
+          `Latest health context:\n${buildHealthPromptContext(state)}`,
+          context ? `Relevant research context:\n${context}` : "",
+        ]
           .filter(Boolean)
           .join("\n\n"),
         userText: message,
@@ -132,13 +188,18 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "POST" && req.url === "/coach/plan") {
+    if (req.method === "POST" && requestUrl.pathname === "/coach/plan") {
       const body = await readJsonBody(req);
       const prompt = body.prompt || "Create my weekly plan.";
       const contextChunks = await retrieveRelevantChunks(prompt);
       const context = formatRetrievedContext(contextChunks);
+      const state = await getHealthState();
       const text = await callVertexGenerate({
-        systemInstruction: [buildSystemInstruction(body.profile, "plan"), context ? `Relevant research context:\n${context}` : ""]
+        systemInstruction: [
+          buildSystemInstruction(body.profile, "plan"),
+          `Latest health context:\n${buildHealthPromptContext(state)}`,
+          context ? `Relevant research context:\n${context}` : "",
+        ]
           .filter(Boolean)
           .join("\n\n"),
         userText: buildPlanPrompt(prompt, body.profile, body.daily),

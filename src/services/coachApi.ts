@@ -1,27 +1,5 @@
-import { NativeModules } from "react-native";
-
 import { DailyPlan, UserProfile } from "../types";
-
-const DEFAULT_PROXY_PORT = "8787";
-
-function inferDevApiBase(): string | undefined {
-  const explicit = process.env.EXPO_PUBLIC_COACH_API_BASE_URL;
-  if (explicit) {
-    return explicit;
-  }
-
-  const scriptURL = NativeModules?.SourceCode?.scriptURL as string | undefined;
-  if (!scriptURL) {
-    return undefined;
-  }
-
-  try {
-    const url = new URL(scriptURL);
-    return `${url.protocol}//${url.hostname}:${DEFAULT_PROXY_PORT}`;
-  } catch {
-    return undefined;
-  }
-}
+import { inferDevApiBase } from "./apiBase";
 
 function firstName(profile: UserProfile) {
   return profile.name.trim().split(" ")[0] || "there";

@@ -6,25 +6,24 @@ This repo contains the `Expo React Native` mobile prototype for AI Coach.
 
 ```bash
 npm install
-npm run build:vectordb -- "/absolute/path/to/your.pdf"
 npm run server
 npm start
 ```
 
-For local AI integration:
+The current health dashboard flow does not require live device hardware or Google credentials.
 
-- Put the Google service account file at `secrets/google-service-account.json`
-- Run `npm run server` to start the local Vertex AI proxy
-- Run `npm start` to launch Expo
-- Keep your phone and Mac on the same Wi-Fi
+Current local flow:
+- run the local Node server
+- open the Expo app
+- switch between built-in mock sync scenarios from the `Today` screen
+- inspect the daily brief and 7-day trend surfaces
 
-The mobile client does not read the credential directly. The local proxy server reads the secret and calls Vertex AI server-side.
+Optional AI chat integration:
+- put the Google service account file at `secrets/google-service-account.json`
+- run `npm run server`
+- retrieval-backed chat and plan endpoints will use Vertex AI when configured
 
-Vector database output:
-
-- built file: `data/vector-db/lab5-vectors.json`
-- builder script: `npm run build:vectordb -- "/absolute/path/to/your.pdf"`
-- retrieval is automatically used by the local AI proxy when that file exists
+The mobile client does not read credentials directly. The local proxy server reads the secret server-side.
 
 ## Product Direction
 
@@ -34,6 +33,7 @@ The app is an iPhone-first research prototype for a screenless wearable companio
 - insight-first health summaries instead of raw metric overload
 - proxy signals for glucose and nitric oxide
 - contextual health guidance across recovery, sleep, stress, movement, and environment
+- a mock-sync-first pipeline that mirrors the expected SDK data flow before the watch hardware arrives
 
 ## Main Files
 
@@ -45,7 +45,12 @@ src/data.ts
 src/storage.ts
 src/theme.ts
 src/types.ts
+src/services/apiBase.ts
 src/services/coachApi.ts
+src/services/healthApi.ts
+server/coach-engine.mjs
+server/health-data-store.mjs
+server/mock-health-fixtures.mjs
 server/vertex-proxy.mjs
 server/build-vector-db.mjs
 server/vector-store.mjs
@@ -54,11 +59,10 @@ server/vertex-client.mjs
 
 ## Screens
 
-- `Today` for the daily summary, key insights, and immediate action plan
-- `Activity` for workout and health-log context
-- `Plan` for weekly plan generation
+- `Today` for the latest synced mock wearable summary, key insights, and action plan
+- `Progress` for the 7-day trend view
+- `You` for profile and research-facing signal explanations
 - `Coach` for AI coach chat
-- `Signals` for research-facing sensor and proxy-signal explanations
 
 ## Stack
 
@@ -66,7 +70,25 @@ server/vertex-client.mjs
 - Expo
 - TypeScript
 - AsyncStorage
+- Node local proxy for structured health data and optional Vertex chat
 
 ## Design
 
 The UI uses a light, white-first visual system with warm neutrals and calm accent colors. The goal is a clean, modern, user-friendly mobile experience that feels more like a thoughtful coach than a dense analytics dashboard.
+
+## Mock Sync Endpoints
+
+The local server now exposes:
+
+- `GET /health-data/latest`
+- `GET /health-data/timeline`
+- `POST /health-data/import-mock`
+- `POST /coach/daily-brief`
+
+Built-in fixtures:
+
+- `recovery-reset`
+- `late-fuel-drift`
+- `steady-rebuild`
+
+These fixtures represent normalized post-sync wearable records that will later be replaced by real SDK output from the bracelet.

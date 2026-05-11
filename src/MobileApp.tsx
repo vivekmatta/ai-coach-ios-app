@@ -11,29 +11,36 @@ import {
 } from "react-native";
 
 import {
-  Card,
-  Screen,
-  SectionTitle,
-  SecondaryButton,
   AppTextInput,
+  Card,
   Pill,
   PrimaryButton,
+  Screen,
+  SecondaryButton,
+  SectionTitle,
 } from "./components";
-import {
-  dailyPlan,
-  defaultProfile,
-  healthLog,
-  metrics,
-  onboardingQuestions,
-  researchSignals,
-  sensors,
-  topInsights,
-  workouts,
-} from "./data";
+import { defaultProfile, onboardingQuestions, researchSignals, sensors } from "./data";
 import { sendCoachMessage } from "./services/coachApi";
-import { loadOnboardingComplete, loadProfile, saveOnboardingComplete, saveProfile } from "./storage";
+import {
+  fetchHealthTimeline,
+  fetchLatestHealthData,
+  importMockHealthFixture,
+} from "./services/healthApi";
+import {
+  loadOnboardingComplete,
+  loadProfile,
+  saveOnboardingComplete,
+  saveProfile,
+} from "./storage";
 import { palette, radius, spacing } from "./theme";
-import { CoachMessage, TabKey, UserProfile } from "./types";
+import {
+  CoachMessage,
+  HealthMetricCard,
+  HealthTimelineResponse,
+  LatestHealthResponse,
+  TabKey,
+  UserProfile,
+} from "./types";
 
 const fields: Array<keyof UserProfile> = [
   "name",
@@ -51,8 +58,37 @@ const tabLabels: Record<TabKey, string> = {
   you: "You",
 };
 
+function toneColor(tone: string) {
+  switch (tone) {
+    case "good":
+      return palette.mint;
+    case "caution":
+      return palette.sand;
+    case "alert":
+      return palette.coral;
+    default:
+      return palette.blue;
+  }
+}
+
+function formatShortDate(date: string) {
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatSleep(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return `${hours}h ${remainder}m`;
+}
+
 export function MobileApp() {
   const [loading, setLoading] = useState(true);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [scenarioLoading, setScenarioLoading] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [profile, setProfile] = useState<UserProfile>(defaultProfile);
   const [tab, setTab] = useState<TabKey>("today");
@@ -63,6 +99,41 @@ export function MobileApp() {
   const [chatLoading, setChatLoading] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [coachOpen, setCoachOpen] = useState(false);
+  const [latestHealth, setLatestHealth] = useState<LatestHealthResponse | null>(null);
+  const [timeline, setTimeline] = useState<HealthTimelineResponse | null>(null);
+
+  async function loadHealthData() {
+    setHealthLoading(true);
+    setHealthError(null);
+
+    try {
+      const [latest, nextTimeline] = await Promise.all([
+        fetchLatestHealthData(),
+        fetchHealthTimeline(),
+      ]);
+      setLatestHealth(latest);
+      setTimeline(nextTimeline);
+      setMessages((current) =>
+        current.length
+          ? current
+          : [
+              {
+                id: "welcome",
+                role: "assistant",
+                text: `${latest.headline} ${latest.summary}`,
+              },
+            ]
+      );
+    } catch (error) {
+      setHealthError(
+        error instanceof Error
+          ? error.message
+          : "Could not load health data. Start the local server and retry."
+      );
+    } finally {
+      setHealthLoading(false);
+    }
+  }
 
   useEffect(() => {
     async function bootstrap() {
@@ -73,14 +144,8 @@ export function MobileApp() {
 
       setProfile(storedProfile);
       setOnboardingDone(done);
-      setMessages([
-        {
-          id: "welcome",
-          role: "assistant",
-          text: "I’ve already looked at today’s signals. Recovery is low, stress is high, and the smartest move is to simplify the day.",
-        },
-      ]);
       setLoading(false);
+      await loadHealthData();
     }
 
     void bootstrap();
@@ -162,6 +227,34 @@ export function MobileApp() {
     setCoachOpen(true);
   }
 
+  async function handleScenarioChange(fixtureId: string) {
+    setScenarioLoading(true);
+    setHealthError(null);
+
+    try {
+      const latest = await importMockHealthFixture(fixtureId);
+      const nextTimeline = await fetchHealthTimeline();
+      setLatestHealth(latest);
+      setTimeline(nextTimeline);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-fixture-${Date.now()}`,
+          role: "assistant",
+          text: `Loaded the ${latest.scenarioLabel} scenario. ${latest.summary}`,
+        },
+      ]);
+    } catch (error) {
+      setHealthError(
+        error instanceof Error
+          ? error.message
+          : "Could not switch scenarios."
+      );
+    } finally {
+      setScenarioLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <View style={styles.loadingWrap}>
@@ -218,7 +311,9 @@ export function MobileApp() {
         <View>
           <Text style={styles.headerGreeting}>Good morning, {firstName}</Text>
           <Text style={styles.headerSubtext}>
-            Your coach turns today’s signals into a simpler plan.
+            {latestHealth?.scenarioLabel
+              ? `${latestHealth.scenarioLabel} is loaded into the dashboard.`
+              : "Your coach turns synced signals into a simpler plan."}
           </Text>
         </View>
         <Pressable onPress={() => setTab("you")} style={styles.headerBadge}>
@@ -228,6 +323,16 @@ export function MobileApp() {
 
       {tab === "today" ? (
         <TodayScreen
+          health={latestHealth}
+          healthLoading={healthLoading}
+          healthError={healthError}
+          scenarioLoading={scenarioLoading}
+          onRetry={() => {
+            void loadHealthData();
+          }}
+          onLoadScenario={(fixtureId) => {
+            void handleScenarioChange(fixtureId);
+          }}
           onAskCoach={async (prompt) => {
             setCoachOpen(true);
             if (prompt) {
@@ -238,6 +343,13 @@ export function MobileApp() {
       ) : null}
       {tab === "progress" ? (
         <ProgressScreen
+          health={latestHealth}
+          timeline={timeline}
+          healthLoading={healthLoading}
+          healthError={healthError}
+          onRetry={() => {
+            void loadHealthData();
+          }}
           onAskCoach={async (prompt) => {
             setCoachOpen(true);
             if (prompt) {
@@ -246,7 +358,7 @@ export function MobileApp() {
           }}
         />
       ) : null}
-      {tab === "you" ? <YouScreen profile={profile} /> : null}
+      {tab === "you" ? <YouScreen profile={profile} latestHealth={latestHealth} /> : null}
 
       {!keyboardVisible ? (
         <View style={styles.tabBar}>
@@ -267,7 +379,10 @@ export function MobileApp() {
       {!coachOpen && !keyboardVisible && (tab === "today" || tab === "progress") ? (
         <Pressable
           onPress={() => setCoachOpen(true)}
-          style={({ pressed }) => [styles.floatingCoachButton, pressed && styles.floatingCoachPressed]}
+          style={({ pressed }) => [
+            styles.floatingCoachButton,
+            pressed && styles.floatingCoachPressed,
+          ]}
         >
           <Text style={styles.floatingCoachIcon}>AI</Text>
           <Text style={styles.floatingCoachText}>Coach</Text>
@@ -286,7 +401,9 @@ export function MobileApp() {
               <View style={styles.modalHeader}>
                 <View>
                   <Text style={styles.modalTitle}>Coach</Text>
-                  <Text style={styles.modalSubtitle}>Ask about today, recovery, sleep, or what to do next.</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Ask about today, recovery, sleep, or what to do next.
+                  </Text>
                 </View>
                 <Pressable onPress={() => setCoachOpen(false)} style={styles.modalClose}>
                   <Text style={styles.modalCloseText}>Close</Text>
@@ -311,28 +428,99 @@ export function MobileApp() {
 }
 
 function TodayScreen({
+  health,
+  healthLoading,
+  healthError,
+  scenarioLoading,
+  onRetry,
+  onLoadScenario,
   onAskCoach,
 }: {
+  health: LatestHealthResponse | null;
+  healthLoading: boolean;
+  healthError: string | null;
+  scenarioLoading: boolean;
+  onRetry: () => void;
+  onLoadScenario: (fixtureId: string) => void;
   onAskCoach: (prompt?: string) => Promise<void>;
 }) {
+  if (healthLoading && !health) {
+    return (
+      <Screen bottomPadding={140}>
+        <Card>
+          <ActivityIndicator color={palette.text} />
+          <Text style={styles.loadingCardText}>Loading the latest mock sync data.</Text>
+        </Card>
+      </Screen>
+    );
+  }
+
+  if (!health) {
+    return (
+      <Screen bottomPadding={140}>
+        <Card>
+          <Text style={styles.cardTitle}>Health data is unavailable</Text>
+          <Text style={styles.cardBody}>
+            {healthError || "Start the local server, then retry loading the mock sync data."}
+          </Text>
+          <View style={styles.questionActions}>
+            <PrimaryButton label="Retry" onPress={onRetry} />
+          </View>
+        </Card>
+      </Screen>
+    );
+  }
+
   return (
     <Screen bottomPadding={150}>
       <Card style={styles.morningHero}>
+        <Pill label={health.syncStatus.label} accent={health.syncStatus.stale ? palette.coral : palette.mint} />
         <Text style={styles.heroEyebrow}>Today’s read</Text>
-        <Text style={styles.heroTitle}>Your body is asking for a lighter day.</Text>
-        <Text style={styles.heroBody}>
-          Recovery is low, sleep debt is visible, and stress is elevated. The best move is to protect the next 24 hours instead of trying to force performance.
+        <Text style={styles.heroTitle}>{health.headline}</Text>
+        <Text style={styles.heroBody}>{health.summary}</Text>
+        <Text style={styles.syncFootnote}>
+          Last sync {formatShortDate(health.latestDay.date)} • Scenario {health.scenarioLabel}
         </Text>
         <View style={styles.heroButtons}>
           <View style={styles.heroButton}>
             <PrimaryButton
               label="Ask coach for today’s plan"
               onPress={() => {
-                void onAskCoach("Give me a plan for today based on my current signals.");
+                void onAskCoach("Give me a plan for today based on the latest synced wearable data.");
               }}
             />
           </View>
         </View>
+      </Card>
+
+      <SectionTitle
+        eyebrow="Scenario switcher"
+        title="Mock sync inputs"
+        subtitle="Use these fixtures until the watch arrives and the SDK is wired in."
+      />
+
+      <Card>
+        <View style={styles.scenarioWrap}>
+          {health.availableFixtures.map((fixture) => {
+            const active = fixture.id === health.scenarioId;
+            return (
+              <Pressable
+                key={fixture.id}
+                onPress={() => onLoadScenario(fixture.id)}
+                style={[
+                  styles.scenarioChip,
+                  active && styles.scenarioChipActive,
+                ]}
+              >
+                <Text style={[styles.scenarioChipTitle, active && styles.scenarioChipTitleActive]}>
+                  {fixture.label}
+                </Text>
+                <Text style={styles.scenarioChipBody}>{fixture.summary}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {scenarioLoading ? <Text style={styles.progressFootnote}>Switching scenarios...</Text> : null}
       </Card>
 
       <SectionTitle
@@ -341,10 +529,15 @@ function TodayScreen({
         subtitle="Short explanations, then clear action."
       />
 
-      {topInsights.map((insight) => (
+      {health.insights.map((insight) => (
         <Card key={insight.title}>
           <View style={styles.inlineTitleRow}>
-            <View style={[styles.accentDot, { backgroundColor: insight.accent }]} />
+            <View
+              style={[
+                styles.accentDot,
+                { backgroundColor: toneColor(insight.tone) },
+              ]}
+            />
             <Text style={styles.cardTitle}>{insight.title}</Text>
           </View>
           <Text style={styles.cardBody}>{insight.text}</Text>
@@ -353,75 +546,104 @@ function TodayScreen({
 
       <Card>
         <Text style={styles.planTitle}>Today’s plan</Text>
-        <View style={styles.planItem}>
-          <Text style={styles.planLabel}>Bedtime</Text>
-          <Text style={styles.planValue}>{dailyPlan.bedtime}</Text>
-        </View>
-        <View style={styles.planItem}>
-          <Text style={styles.planLabel}>Workout</Text>
-          <Text style={styles.planValue}>{dailyPlan.workout}</Text>
-        </View>
-        <View style={styles.planItem}>
-          <Text style={styles.planLabel}>Hydration</Text>
-          <Text style={styles.planValue}>{dailyPlan.hydration}</Text>
-        </View>
-        <View style={styles.planItem}>
-          <Text style={styles.planLabel}>Nutrition</Text>
-          <Text style={styles.planValue}>{dailyPlan.nutrition}</Text>
-        </View>
+        {health.actionPlan.map((item) => (
+          <View key={item.title} style={styles.planItem}>
+            <Text style={styles.planLabel}>{item.title}</Text>
+            <Text style={styles.planValue}>{item.text}</Text>
+          </View>
+        ))}
       </Card>
 
+      {health.riskFlags.length ? (
+        <>
+          <SectionTitle
+            eyebrow="Watch list"
+            title="Risk flags"
+            subtitle="These are warnings, not diagnoses."
+          />
+          {health.riskFlags.map((flag) => (
+            <Card key={flag.title}>
+              <Text style={styles.cardTitle}>{flag.title}</Text>
+              <Text style={styles.cardBody}>{flag.text}</Text>
+            </Card>
+          ))}
+        </>
+      ) : null}
+
       <SectionTitle
-        eyebrow="What to watch"
-        title="A few focused coaching cues"
-        subtitle="Less data, more meaning."
+        eyebrow="Daily metrics"
+        title="A small number of signals"
+        subtitle="Enough context to be useful without turning into a dashboard maze."
       />
 
-      {metrics.map((metric) => (
-        <Card key={metric.id}>
-          <View style={styles.metricNarrativeHeader}>
-            <View style={[styles.metricAccentBar, { backgroundColor: metric.accent }]} />
-            <View style={styles.metricNarrativeTextWrap}>
-              <Text style={styles.cardTitle}>{metric.name}</Text>
-              <Text style={styles.cardBody}>{metric.shortInsight}</Text>
-            </View>
-          </View>
-          <View style={styles.metricMetaRow}>
-            <View style={[styles.softStatusBadge, { backgroundColor: metric.accent }]} />
-            <Text style={styles.metricStatusLabel}>{metric.status}</Text>
-            <Text style={styles.metricMetaDivider}>•</Text>
-            <Text style={styles.metricMetaLabel}>Tap Coach if you want the why</Text>
-          </View>
-        </Card>
-      ))}
+      <View style={styles.metricGrid}>
+        {health.metricCards.map((metric) => (
+          <MetricCard key={metric.id} metric={metric} />
+        ))}
+      </View>
     </Screen>
   );
 }
 
 function ProgressScreen({
+  health,
+  timeline,
+  healthLoading,
+  healthError,
+  onRetry,
   onAskCoach,
 }: {
+  health: LatestHealthResponse | null;
+  timeline: HealthTimelineResponse | null;
+  healthLoading: boolean;
+  healthError: string | null;
+  onRetry: () => void;
   onAskCoach: (prompt?: string) => Promise<void>;
 }) {
+  if (healthLoading && !timeline) {
+    return (
+      <Screen bottomPadding={140}>
+        <Card>
+          <ActivityIndicator color={palette.text} />
+          <Text style={styles.loadingCardText}>Loading the recent trend view.</Text>
+        </Card>
+      </Screen>
+    );
+  }
+
+  if (!timeline || !health) {
+    return (
+      <Screen bottomPadding={140}>
+        <Card>
+          <Text style={styles.cardTitle}>Progress data is unavailable</Text>
+          <Text style={styles.cardBody}>
+            {healthError || "Load a mock sync scenario to populate the progress view."}
+          </Text>
+          <View style={styles.questionActions}>
+            <PrimaryButton label="Retry" onPress={onRetry} />
+          </View>
+        </Card>
+      </Screen>
+    );
+  }
+
   return (
     <Screen bottomPadding={150}>
       <SectionTitle
         eyebrow="Progress"
         title="The trend matters more than the metric."
-        subtitle="Use history to understand the pattern, not to obsess over numbers."
+        subtitle="Use the last 7 days to understand the pattern, not to obsess over a single reading."
       />
 
       <Card>
-        <Text style={styles.summaryHeadline}>This week points to a recovery dip, not a motivation problem.</Text>
-        <Text style={styles.cardBody}>
-          The workload rose, sleep slipped, and the rebound stayed fragile. The right response is gentler structure, not more pressure.
-        </Text>
+        <Text style={styles.summaryHeadline}>{timeline.trendSummary}</Text>
+        <Text style={styles.cardBody}>{health.scenarioSummary}</Text>
         <View style={styles.heroButtons}>
           <View style={styles.heroButton}>
             <SecondaryButton
               label="Ask coach what changed"
               onPress={() => {
-                void onAskCoach("What changed this week and what should I do next?");
+                void onAskCoach("What changed across the last week and what should I do next?");
               }}
             />
           </View>
@@ -429,53 +651,61 @@ function ProgressScreen({
       </Card>
 
       <SectionTitle
-        eyebrow="Recent sessions"
-        title="Training in plain language"
-        subtitle="A quick read on what each session meant."
+        eyebrow="Seven-day timeline"
+        title="Recent health pattern"
+        subtitle="Recovery, sleep, HRV, movement, and stress side by side."
       />
 
-      {workouts.map((workout) => (
-        <Card key={workout.id}>
+      {timeline.points.map((point) => (
+        <Card key={point.date}>
           <View style={styles.workoutHeader}>
             <View>
-              <Text style={styles.cardTitle}>{workout.typeLabel}</Text>
-              <Text style={styles.workoutMeta}>{workout.date}</Text>
+              <Text style={styles.cardTitle}>{formatShortDate(point.date)}</Text>
+              <Text style={styles.workoutMeta}>Mock bracelet sync day</Text>
             </View>
-            <Text style={styles.workoutEffort}>{workout.type.toUpperCase()}</Text>
+            <Text style={styles.workoutEffort}>HRV {point.hrv}</Text>
           </View>
-          <Text style={styles.cardBody}>{workout.notes}</Text>
-          <Text style={styles.progressFootnote}>{workout.effort} • {workout.duration}</Text>
+          <View style={styles.timelineRow}>
+            <MiniStat label="Recovery" value={`${point.recoveryScore}/100`} />
+            <MiniStat label="Sleep" value={`${point.sleepScore}/100`} />
+            <MiniStat label="Stress" value={`${point.stressScore}/100`} />
+          </View>
+          <Text style={styles.progressFootnote}>
+            {point.steps.toLocaleString()} steps
+          </Text>
         </Card>
       ))}
 
       <SectionTitle
-        eyebrow="Health log"
-        title="Pattern over perfection"
-        subtitle="Use trends to explain behavior, not to shame it."
+        eyebrow="Current snapshot"
+        title="Where the latest day landed"
+        subtitle="A compact summary of the most recent sync."
       />
 
-      {healthLog.map((entry) => (
-        <Card key={entry.date}>
-          <Text style={styles.cardTitle}>{entry.date}</Text>
-          <Text style={styles.cardBody}>{entry.notes}</Text>
-          <Text style={styles.progressFootnote}>Stress {entry.stress} • Sleep {entry.sleep}</Text>
-        </Card>
-      ))}
+      <Card>
+        <Text style={styles.cardBody}>
+          Sleep {formatSleep(health.latestDay.sleepDurationMinutes)} • Recovery{" "}
+          {health.latestDay.recoveryScore}/100 • Stress {health.latestDay.stressLabel} •
+          Glucose proxy {health.latestDay.glucoseProxy}
+        </Text>
+      </Card>
     </Screen>
   );
 }
 
 function YouScreen({
   profile,
+  latestHealth,
 }: {
   profile: UserProfile;
+  latestHealth: LatestHealthResponse | null;
 }) {
   return (
     <Screen bottomPadding={140}>
       <SectionTitle
         eyebrow="You"
         title="How the app understands your day"
-        subtitle="Profile, preferences, and a simple explanation of the data model."
+        subtitle="Profile, trust model, and the current mock-to-real device pipeline."
       />
 
       <Card>
@@ -488,10 +718,22 @@ function YouScreen({
         </Text>
       </Card>
 
+      <Card>
+        <Text style={styles.cardTitle}>Current ingestion model</Text>
+        <Text style={styles.cardBody}>
+          The manufacturer stores about 7 days on-device, then syncs data over Bluetooth to the phone app. Right now this repo uses mock post-sync payloads that match that architecture so the dashboard and coaching logic can be built before the watch arrives.
+        </Text>
+        {latestHealth ? (
+          <Text style={styles.progressFootnote}>
+            Active scenario: {latestHealth.scenarioLabel}
+          </Text>
+        ) : null}
+      </Card>
+
       <SectionTitle
         eyebrow="Trust"
         title="Direct, proxy, and context signals"
-        subtitle="Most of the app is translating signals into simpler language, not exposing raw measurements."
+        subtitle="Most of the app translates signals into plain language instead of exposing raw measurements."
       />
 
       {researchSignals.map((signal) => (
@@ -542,7 +784,7 @@ function CoachScreen({
       <SectionTitle
         eyebrow="Coach"
         title="Short answers. Clear actions."
-        subtitle="Chat is the only live AI surface for now."
+        subtitle="Chat is still the only open-ended AI surface."
       />
 
       <Card>
@@ -590,6 +832,31 @@ function CoachScreen({
   );
 }
 
+function MetricCard({ metric }: { metric: HealthMetricCard }) {
+  return (
+    <Card style={styles.metricCard}>
+      <View
+        style={[
+          styles.metricAccentBar,
+          { backgroundColor: toneColor(metric.tone) },
+        ]}
+      />
+      <Text style={styles.metricCardLabel}>{metric.label}</Text>
+      <Text style={styles.metricCardValue}>{metric.value}</Text>
+      <Text style={styles.metricCardContext}>{metric.context}</Text>
+    </Card>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.miniStat}>
+      <Text style={styles.miniStatLabel}>{label}</Text>
+      <Text style={styles.miniStatValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -603,6 +870,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   loadingText: {
+    color: palette.textMuted,
+    fontSize: 14,
+  },
+  loadingCardText: {
+    marginTop: spacing.sm,
     color: palette.textMuted,
     fontSize: 14,
   },
@@ -639,6 +911,24 @@ const styles = StyleSheet.create({
     color: palette.text,
     fontSize: 12,
     fontWeight: "700",
+  },
+  heroCard: {
+    gap: spacing.md,
+  },
+  questionCounter: {
+    color: palette.textMuted,
+    fontSize: 13,
+    marginBottom: spacing.sm,
+  },
+  questionText: {
+    color: palette.text,
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "700",
+    marginBottom: spacing.md,
+  },
+  questionActions: {
+    marginTop: spacing.md,
   },
   tabBar: {
     position: "absolute",
@@ -760,82 +1050,108 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.line,
     borderRadius: radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
   modalCloseText: {
     color: palette.text,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  heroCard: {
-    backgroundColor: palette.surfaceMuted,
-  },
-  morningHero: {
-    backgroundColor: "#FBF8F4",
-  },
-  heroEyebrow: {
     fontSize: 12,
     fontWeight: "700",
-    letterSpacing: 1,
+  },
+  morningHero: {
+    gap: spacing.sm,
+  },
+  heroEyebrow: {
     color: palette.sage,
     textTransform: "uppercase",
-    marginBottom: 10,
+    letterSpacing: 1,
+    fontSize: 12,
+    fontWeight: "700",
   },
   heroTitle: {
+    color: palette.text,
     fontSize: 30,
     lineHeight: 36,
     fontWeight: "700",
-    color: palette.text,
   },
   heroBody: {
-    marginTop: 12,
+    color: palette.textMuted,
     fontSize: 16,
     lineHeight: 24,
+  },
+  syncFootnote: {
     color: palette.textMuted,
+    fontSize: 13,
   },
   heroButtons: {
-    marginTop: 18,
-    gap: 10,
+    marginTop: spacing.sm,
   },
   heroButton: {
     width: "100%",
   },
+  scenarioWrap: {
+    gap: spacing.sm,
+  },
+  scenarioChip: {
+    borderWidth: 1,
+    borderColor: palette.line,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    backgroundColor: palette.surfaceMuted,
+    gap: 6,
+  },
+  scenarioChipActive: {
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
+  },
+  scenarioChipTitle: {
+    color: palette.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  scenarioChipTitleActive: {
+    color: palette.text,
+  },
+  scenarioChipBody: {
+    color: palette.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   inlineTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
   accentDot: {
     width: 10,
     height: 10,
-    borderRadius: 999,
+    borderRadius: radius.pill,
   },
   cardTitle: {
+    color: palette.text,
     fontSize: 18,
     fontWeight: "700",
-    color: palette.text,
   },
   cardBody: {
-    marginTop: 10,
+    color: palette.textMuted,
     fontSize: 15,
     lineHeight: 22,
-    color: palette.textMuted,
   },
   planTitle: {
-    fontSize: 20,
-    fontWeight: "700",
     color: palette.text,
-    marginBottom: 4,
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: spacing.sm,
   },
   planItem: {
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: palette.line,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: palette.line,
   },
   planLabel: {
     color: palette.text,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
     marginBottom: 4,
   },
@@ -844,217 +1160,152 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-  metricTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
+  metricGrid: {
+    gap: spacing.md,
+  },
+  metricCard: {
     gap: spacing.sm,
   },
-  metricNarrativeHeader: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "flex-start",
-  },
   metricAccentBar: {
-    width: 6,
-    minHeight: 58,
+    width: 40,
+    height: 4,
     borderRadius: radius.pill,
   },
-  metricNarrativeTextWrap: {
-    flex: 1,
-  },
-  metricMetaRow: {
-    marginTop: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  softStatusBadge: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-  },
-  metricStatusLabel: {
-    color: palette.text,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  metricMetaDivider: {
-    color: palette.textMuted,
-    fontSize: 12,
-  },
-  metricMetaLabel: {
-    color: palette.textMuted,
-    fontSize: 12,
-  },
-  metricValue: {
-    marginTop: 8,
-    color: palette.text,
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  metricUnit: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: palette.textMuted,
-  },
-  metricBaseline: {
-    marginTop: 6,
+  metricCardLabel: {
     color: palette.textMuted,
     fontSize: 13,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
-  metricDescription: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 21,
-    color: palette.textMuted,
-  },
-  statusBadge: {
-    borderRadius: radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  statusBadgeText: {
-    color: palette.surface,
-    fontSize: 12,
+  metricCardValue: {
+    color: palette.text,
+    fontSize: 28,
+    lineHeight: 32,
     fontWeight: "700",
   },
-  actionWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 14,
-  },
-  actionPill: {
-    backgroundColor: palette.surfaceMuted,
-    borderRadius: radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  actionPillText: {
-    color: palette.text,
-    fontSize: 12,
-    fontWeight: "600",
+  metricCardContext: {
+    color: palette.textMuted,
+    fontSize: 14,
   },
   summaryHeadline: {
-    fontSize: 22,
-    lineHeight: 30,
     color: palette.text,
+    fontSize: 24,
+    lineHeight: 30,
     fontWeight: "700",
+    marginBottom: spacing.sm,
   },
   workoutHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: spacing.sm,
+    gap: spacing.md,
+    marginBottom: spacing.sm,
   },
   workoutMeta: {
-    marginTop: 4,
     color: palette.textMuted,
     fontSize: 13,
+    marginTop: 4,
   },
   workoutEffort: {
-    color: palette.coral,
+    color: palette.sage,
     fontSize: 13,
     fontWeight: "700",
   },
-  workoutStats: {
-    marginTop: 10,
-    color: palette.text,
-    fontSize: 14,
-    fontWeight: "600",
+  timelineRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
-  progressFootnote: {
-    marginTop: 12,
+  miniStat: {
+    flex: 1,
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+  },
+  miniStatLabel: {
     color: palette.textMuted,
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
+    marginBottom: 4,
   },
-  logMetrics: {
-    marginTop: 8,
+  miniStatValue: {
     color: palette.text,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  progressFootnote: {
+    color: palette.textMuted,
     fontSize: 13,
+    marginTop: spacing.sm,
+  },
+  metricTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  metricBaseline: {
+    color: palette.textMuted,
+    fontSize: 13,
+    marginTop: 4,
+  },
+  directnessBadge: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  directnessText: {
+    color: palette.text,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  sensorRow: {
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: palette.line,
+  },
+  sensorName: {
+    color: palette.text,
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  sensorBody: {
+    color: palette.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
   },
   quickPromptWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
-    marginTop: 12,
+    gap: spacing.sm,
   },
   quickPrompt: {
     backgroundColor: palette.surfaceMuted,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: palette.line,
+    borderRadius: radius.pill,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   quickPromptText: {
     color: palette.text,
     fontSize: 13,
-    lineHeight: 18,
     fontWeight: "600",
-  },
-  generatedPlanText: {
-    marginTop: 12,
-    color: palette.textMuted,
-    fontSize: 15,
-    lineHeight: 23,
   },
   assistantBubble: {
     backgroundColor: palette.surface,
   },
   userBubble: {
-    backgroundColor: "#F4EFE8",
+    backgroundColor: palette.sageSoft,
   },
   messageRole: {
-    color: palette.text,
+    color: palette.textMuted,
     fontSize: 12,
     fontWeight: "700",
+    marginBottom: spacing.sm,
     textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  directnessBadge: {
-    backgroundColor: palette.sageSoft,
-    borderRadius: radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  directnessText: {
-    color: palette.sage,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  sensorRow: {
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.line,
-    marginTop: 12,
-  },
-  sensorName: {
-    color: palette.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  sensorBody: {
-    marginTop: 4,
-    color: palette.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  questionCounter: {
-    color: palette.textMuted,
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  questionText: {
-    color: palette.text,
-    fontSize: 22,
-    lineHeight: 30,
-    fontWeight: "700",
-    marginBottom: 16,
-  },
-  questionActions: {
-    marginTop: 14,
+    letterSpacing: 0.8,
   },
 });
