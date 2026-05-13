@@ -1,25 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
+  type DimensionValue,
 } from "react-native";
 
-import {
-  AppTextInput,
-  Card,
-  Pill,
-  PrimaryButton,
-  Screen,
-  SecondaryButton,
-  SectionTitle,
-} from "./components";
-import { defaultProfile, onboardingQuestions, researchSignals, sensors } from "./data";
+import { AppTextInput, Card, PrimaryButton } from "./components";
+import { defaultProfile, onboardingQuestions } from "./data";
 import { sendCoachMessage } from "./services/coachApi";
 import {
   fetchHealthTimeline,
@@ -35,7 +29,9 @@ import {
 import { palette, radius, spacing } from "./theme";
 import {
   CoachMessage,
+  HealthInsight,
   HealthMetricCard,
+  HealthTimelinePoint,
   HealthTimelineResponse,
   LatestHealthResponse,
   TabKey,
@@ -55,19 +51,46 @@ const fields: Array<keyof UserProfile> = [
 const tabLabels: Record<TabKey, string> = {
   today: "Today",
   progress: "Progress",
-  you: "You",
+  coach: "Coach",
+  you: "Profile",
 };
+
+const tabGlyphs: Record<TabKey, string> = {
+  today: "T",
+  progress: "P",
+  coach: "C",
+  you: "Y",
+};
+
+const defaultQuickPrompts = [
+  "What should I do today?",
+  "Why is my recovery low?",
+  "How can I sleep better tonight?",
+];
 
 function toneColor(tone: string) {
   switch (tone) {
     case "good":
-      return palette.mint;
+      return palette.sage;
     case "caution":
       return palette.sand;
     case "alert":
       return palette.coral;
     default:
       return palette.blue;
+  }
+}
+
+function toneSoftColor(tone: string) {
+  switch (tone) {
+    case "good":
+      return palette.sageSoft;
+    case "caution":
+      return palette.sandSoft;
+    case "alert":
+      return palette.coralSoft;
+    default:
+      return palette.blueSoft;
   }
 }
 
@@ -84,6 +107,17 @@ function formatSleep(minutes: number) {
   return `${hours}h ${remainder}m`;
 }
 
+function average(values: number[]) {
+  if (!values.length) {
+    return 0;
+  }
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function firstNameFrom(profile: UserProfile) {
+  return profile.name.trim().split(" ")[0] || "there";
+}
+
 export function MobileApp() {
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(true);
@@ -97,8 +131,6 @@ export function MobileApp() {
   const [messages, setMessages] = useState<CoachMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [coachOpen, setCoachOpen] = useState(false);
   const [latestHealth, setLatestHealth] = useState<LatestHealthResponse | null>(null);
   const [timeline, setTimeline] = useState<HealthTimelineResponse | null>(null);
 
@@ -152,26 +184,12 @@ export function MobileApp() {
   }, []);
 
   useEffect(() => {
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    if (!onboardingDone) {
+      setDraft(profile[fields[questionIndex]] ?? "");
+    }
+  }, [onboardingDone, profile, questionIndex]);
 
-    const showSubscription = Keyboard.addListener(showEvent, () => {
-      setKeyboardVisible(true);
-    });
-    const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      setKeyboardVisible(false);
-    });
-
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, []);
-
-  const firstName = useMemo(() => {
-    const value = profile.name.trim().split(" ")[0];
-    return value || "there";
-  }, [profile.name]);
+  const firstName = useMemo(() => firstNameFrom(profile), [profile]);
 
   async function advanceOnboarding() {
     const key = fields[questionIndex];
@@ -191,27 +209,23 @@ export function MobileApp() {
     setDraft(nextProfile[fields[questionIndex + 1]]);
   }
 
-  useEffect(() => {
-    if (!onboardingDone) {
-      setDraft(profile[fields[questionIndex]] ?? "");
-    }
-  }, [onboardingDone, profile, questionIndex]);
-
   async function handleSendMessage(prefill?: string) {
     const raw = (prefill ?? chatInput).trim();
     if (!raw || chatLoading) {
       return;
     }
 
-    const userMessage: CoachMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      text: raw,
-    };
-
-    setMessages((current) => [...current, userMessage]);
+    setTab("coach");
     setChatInput("");
     setChatLoading(true);
+    setMessages((current) => [
+      ...current,
+      {
+        id: `user-${Date.now()}`,
+        role: "user",
+        text: raw,
+      },
+    ]);
 
     const replyText = await sendCoachMessage(raw, profile);
 
@@ -224,7 +238,6 @@ export function MobileApp() {
       },
     ]);
     setChatLoading(false);
-    setCoachOpen(true);
   }
 
   async function handleScenarioChange(fixtureId: string) {
@@ -241,15 +254,11 @@ export function MobileApp() {
         {
           id: `assistant-fixture-${Date.now()}`,
           role: "assistant",
-          text: `Loaded the ${latest.scenarioLabel} scenario. ${latest.summary}`,
+          text: `Loaded ${latest.scenarioLabel}. ${latest.summary}`,
         },
       ]);
     } catch (error) {
-      setHealthError(
-        error instanceof Error
-          ? error.message
-          : "Could not switch scenarios."
-      );
+      setHealthError(error instanceof Error ? error.message : "Could not switch scenarios.");
     } finally {
       setScenarioLoading(false);
     }
@@ -258,7 +267,7 @@ export function MobileApp() {
   if (loading) {
     return (
       <View style={styles.loadingWrap}>
-        <ActivityIndicator color={palette.text} />
+        <ActivityIndicator color={palette.sage} />
         <Text style={styles.loadingText}>Loading AI Coach</Text>
       </View>
     );
@@ -266,14 +275,18 @@ export function MobileApp() {
 
   if (!onboardingDone) {
     return (
-      <Screen>
-        <Card style={styles.heroCard}>
-          <Pill label="AI Coach" accent={palette.text} />
-          <SectionTitle
-            eyebrow="Onboarding"
-            title="A calmer, clearer health coach."
-            subtitle="This prototype turns wearable and context data into simple daily guidance instead of a wall of numbers."
-          />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.onboardingContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Card style={styles.onboardingHero}>
+          <Text style={styles.pill}>AI Coach Study</Text>
+          <Text style={styles.onboardingTitle}>A calmer, clearer health coach.</Text>
+          <Text style={styles.onboardingBody}>
+            This prototype turns wearable sync data into simple daily guidance for student
+            participants.
+          </Text>
         </Card>
 
         <Card>
@@ -287,7 +300,7 @@ export function MobileApp() {
             placeholder="Type your answer"
             multiline={questionIndex === 1}
           />
-          <View style={styles.questionActions}>
+          <View style={styles.primaryAction}>
             <PrimaryButton
               label={questionIndex === onboardingQuestions.length - 1 ? "Finish setup" : "Continue"}
               onPress={() => {
@@ -297,29 +310,16 @@ export function MobileApp() {
             />
           </View>
         </Card>
-      </Screen>
+      </ScrollView>
     );
   }
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerGreeting}>Good morning, {firstName}</Text>
-          <Text style={styles.headerSubtext}>
-            {latestHealth?.scenarioLabel
-              ? `${latestHealth.scenarioLabel} is loaded into the dashboard.`
-              : "Your coach turns synced signals into a simpler plan."}
-          </Text>
-        </View>
-        <Pressable onPress={() => setTab("you")} style={styles.headerBadge}>
-          <Text style={styles.headerBadgeText}>About You</Text>
-        </Pressable>
-      </View>
+      <AppHeader tab={tab} firstName={firstName} />
 
       {tab === "today" ? (
         <TodayScreen
@@ -333,11 +333,8 @@ export function MobileApp() {
           onLoadScenario={(fixtureId) => {
             void handleScenarioChange(fixtureId);
           }}
-          onAskCoach={async (prompt) => {
-            setCoachOpen(true);
-            if (prompt) {
-              void handleSendMessage(prompt);
-            }
+          onAskCoach={(prompt) => {
+            void handleSendMessage(prompt);
           }}
         />
       ) : null}
@@ -350,80 +347,66 @@ export function MobileApp() {
           onRetry={() => {
             void loadHealthData();
           }}
-          onAskCoach={async (prompt) => {
-            setCoachOpen(true);
-            if (prompt) {
-              void handleSendMessage(prompt);
-            }
+        />
+      ) : null}
+      {tab === "coach" ? (
+        <CoachScreen
+          messages={messages}
+          input={chatInput}
+          setInput={setChatInput}
+          loading={chatLoading}
+          onSend={() => {
+            void handleSendMessage();
+          }}
+          onPrompt={(prompt) => {
+            void handleSendMessage(prompt);
           }}
         />
       ) : null}
-      {tab === "you" ? <YouScreen profile={profile} latestHealth={latestHealth} /> : null}
+      {tab === "you" ? <ProfileScreen profile={profile} latestHealth={latestHealth} /> : null}
 
-      {!keyboardVisible ? (
-        <View style={styles.tabBar}>
-          {(Object.keys(tabLabels) as TabKey[]).map((key) => (
-            <Pressable
-              key={key}
-              onPress={() => setTab(key)}
-              style={[styles.tabItem, tab === key && styles.tabItemActive]}
-            >
-              <Text style={[styles.tabLabel, tab === key && styles.tabLabelActive]}>
-                {tabLabels[key]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-
-      {!coachOpen && !keyboardVisible && (tab === "today" || tab === "progress") ? (
-        <Pressable
-          onPress={() => setCoachOpen(true)}
-          style={({ pressed }) => [
-            styles.floatingCoachButton,
-            pressed && styles.floatingCoachPressed,
-          ]}
-        >
-          <Text style={styles.floatingCoachIcon}>AI</Text>
-          <Text style={styles.floatingCoachText}>Coach</Text>
-        </Pressable>
-      ) : null}
-
-      {coachOpen ? (
-        <View pointerEvents="box-none" style={styles.coachSheetOverlay}>
-          <KeyboardAvoidingView
-            style={styles.coachSheetWrap}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
-          >
-            <View style={styles.coachSheet}>
-              <View style={styles.sheetHandle} />
-              <View style={styles.modalHeader}>
-                <View>
-                  <Text style={styles.modalTitle}>Coach</Text>
-                  <Text style={styles.modalSubtitle}>
-                    Ask about today, recovery, sleep, or what to do next.
-                  </Text>
-                </View>
-                <Pressable onPress={() => setCoachOpen(false)} style={styles.modalClose}>
-                  <Text style={styles.modalCloseText}>Close</Text>
-                </Pressable>
-              </View>
-              <CoachScreen
-                messages={messages}
-                input={chatInput}
-                setInput={setChatInput}
-                loading={chatLoading}
-                keyboardVisible={keyboardVisible}
-                onSend={() => {
-                  void handleSendMessage();
-                }}
-              />
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      ) : null}
+      <BottomTabs activeTab={tab} onChange={setTab} />
     </KeyboardAvoidingView>
+  );
+}
+
+function AppHeader({ tab, firstName }: { tab: TabKey; firstName: string }) {
+  return (
+    <View style={styles.header}>
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{firstName.slice(0, 1).toUpperCase()}</Text>
+      </View>
+      <View style={styles.headerCenter}>
+        <Text style={styles.headerTitle}>{tabLabels[tab]}</Text>
+        <Text style={styles.headerSubtitle}>AI Health Coach</Text>
+      </View>
+      <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+        <Text style={styles.iconButtonText}>Set</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function EmptyState({
+  title,
+  body,
+  loading,
+  onRetry,
+}: {
+  title: string;
+  body: string;
+  loading?: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
+      <Card style={styles.centerCard}>
+        {loading ? <ActivityIndicator color={palette.sage} /> : null}
+        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={styles.cardBody}>{body}</Text>
+        <PrimaryButton label="Retry" onPress={onRetry} />
+      </Card>
+    </ScrollView>
   );
 }
 
@@ -442,64 +425,83 @@ function TodayScreen({
   scenarioLoading: boolean;
   onRetry: () => void;
   onLoadScenario: (fixtureId: string) => void;
-  onAskCoach: (prompt?: string) => Promise<void>;
+  onAskCoach: (prompt: string) => void;
 }) {
   if (healthLoading && !health) {
     return (
-      <Screen bottomPadding={140}>
-        <Card>
-          <ActivityIndicator color={palette.text} />
-          <Text style={styles.loadingCardText}>Loading the latest mock sync data.</Text>
-        </Card>
-      </Screen>
+      <EmptyState
+        title="Loading the latest sync"
+        body="Fetching the current mock bracelet payload."
+        loading
+        onRetry={onRetry}
+      />
     );
   }
 
   if (!health) {
     return (
-      <Screen bottomPadding={140}>
-        <Card>
-          <Text style={styles.cardTitle}>Health data is unavailable</Text>
-          <Text style={styles.cardBody}>
-            {healthError || "Start the local server, then retry loading the mock sync data."}
-          </Text>
-          <View style={styles.questionActions}>
-            <PrimaryButton label="Retry" onPress={onRetry} />
-          </View>
-        </Card>
-      </Screen>
+      <EmptyState
+        title="Health data is unavailable"
+        body={healthError || "Start the local server, then retry loading the mock sync data."}
+        onRetry={onRetry}
+      />
     );
   }
 
+  const primaryMetrics = health.metricCards.filter((metric) =>
+    ["recovery", "sleep", "stress", "hrv"].includes(metric.id)
+  );
+
   return (
-    <Screen bottomPadding={150}>
-      <Card style={styles.morningHero}>
-        <Pill label={health.syncStatus.label} accent={health.syncStatus.stale ? palette.coral : palette.mint} />
-        <Text style={styles.heroEyebrow}>Today’s read</Text>
+    <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
+      <Card style={styles.heroCard}>
+        <View style={styles.ambientBlob} />
         <Text style={styles.heroTitle}>{health.headline}</Text>
+        <View style={styles.syncRow}>
+          <View style={[styles.statusDot, { backgroundColor: health.syncStatus.stale ? palette.coral : palette.sage }]} />
+          <Text style={styles.syncText}>
+            {health.syncStatus.label} • {formatShortDate(health.latestDay.date)}
+          </Text>
+        </View>
         <Text style={styles.heroBody}>{health.summary}</Text>
-        <Text style={styles.syncFootnote}>
-          Last sync {formatShortDate(health.latestDay.date)} • Scenario {health.scenarioLabel}
-        </Text>
-        <View style={styles.heroButtons}>
-          <View style={styles.heroButton}>
-            <PrimaryButton
-              label="Ask coach for today’s plan"
-              onPress={() => {
-                void onAskCoach("Give me a plan for today based on the latest synced wearable data.");
-              }}
-            />
-          </View>
+        <View style={styles.tagRow}>
+          <Text style={styles.softTag}>{health.latestDay.recoveryScore < 55 ? "Rest Day" : "Steady Build"}</Text>
+          <Text style={styles.softTag}>{health.scenarioLabel}</Text>
         </View>
       </Card>
 
-      <SectionTitle
-        eyebrow="Scenario switcher"
-        title="Mock sync inputs"
-        subtitle="Use these fixtures until the watch arrives and the SDK is wired in."
-      />
+      <View style={styles.bentoGrid}>
+        {primaryMetrics.map((metric, index) => (
+          <MetricBentoCard key={metric.id} metric={metric} large={index === 0} />
+        ))}
+      </View>
+
+      <SectionHeading title="Today's action plan" />
+      <Card style={styles.actionList}>
+        {health.actionPlan.slice(0, 4).map((item) => (
+          <ActionRow key={item.title} title={item.title} text={item.text} />
+        ))}
+      </Card>
+
+      <SectionHeading title="What matters most" />
+      {health.insights.slice(0, 3).map((insight) => (
+        <InsightCard key={insight.title} insight={insight} />
+      ))}
+
+      <Card style={styles.proxyCard}>
+        <Text style={styles.cardTitle}>Proxy indicators</Text>
+        <Text style={styles.cardBody}>
+          Glucose and nitric oxide are behavior proxies only, not measured medical values.
+        </Text>
+        <View style={styles.proxyGrid}>
+          <MiniStat label="Glucose proxy" value={health.latestDay.glucoseProxy} />
+          <MiniStat label="Nitric oxide proxy" value={health.latestDay.nitricOxideProxy} />
+        </View>
+      </Card>
 
       <Card>
+        <Text style={styles.cardTitle}>Mock sync inputs</Text>
+        <Text style={styles.cardBody}>Use these fixtures until the watch SDK is wired in.</Text>
         <View style={styles.scenarioWrap}>
           {health.availableFixtures.map((fixture) => {
             const active = fixture.id === health.scenarioId;
@@ -507,81 +509,30 @@ function TodayScreen({
               <Pressable
                 key={fixture.id}
                 onPress={() => onLoadScenario(fixture.id)}
-                style={[
+                style={({ pressed }) => [
                   styles.scenarioChip,
                   active && styles.scenarioChipActive,
+                  pressed && styles.pressed,
                 ]}
               >
-                <Text style={[styles.scenarioChipTitle, active && styles.scenarioChipTitleActive]}>
+                <Text style={[styles.scenarioTitle, active && styles.scenarioTitleActive]}>
                   {fixture.label}
                 </Text>
-                <Text style={styles.scenarioChipBody}>{fixture.summary}</Text>
+                <Text style={styles.scenarioBody}>{fixture.summary}</Text>
               </Pressable>
             );
           })}
         </View>
-        {scenarioLoading ? <Text style={styles.progressFootnote}>Switching scenarios...</Text> : null}
+        {scenarioLoading ? <Text style={styles.footnote}>Switching scenarios...</Text> : null}
       </Card>
 
-      <SectionTitle
-        eyebrow="Key insights"
-        title="What matters most today"
-        subtitle="Short explanations, then clear action."
-      />
-
-      {health.insights.map((insight) => (
-        <Card key={insight.title}>
-          <View style={styles.inlineTitleRow}>
-            <View
-              style={[
-                styles.accentDot,
-                { backgroundColor: toneColor(insight.tone) },
-              ]}
-            />
-            <Text style={styles.cardTitle}>{insight.title}</Text>
-          </View>
-          <Text style={styles.cardBody}>{insight.text}</Text>
-        </Card>
-      ))}
-
-      <Card>
-        <Text style={styles.planTitle}>Today’s plan</Text>
-        {health.actionPlan.map((item) => (
-          <View key={item.title} style={styles.planItem}>
-            <Text style={styles.planLabel}>{item.title}</Text>
-            <Text style={styles.planValue}>{item.text}</Text>
-          </View>
-        ))}
-      </Card>
-
-      {health.riskFlags.length ? (
-        <>
-          <SectionTitle
-            eyebrow="Watch list"
-            title="Risk flags"
-            subtitle="These are warnings, not diagnoses."
-          />
-          {health.riskFlags.map((flag) => (
-            <Card key={flag.title}>
-              <Text style={styles.cardTitle}>{flag.title}</Text>
-              <Text style={styles.cardBody}>{flag.text}</Text>
-            </Card>
-          ))}
-        </>
-      ) : null}
-
-      <SectionTitle
-        eyebrow="Daily metrics"
-        title="A small number of signals"
-        subtitle="Enough context to be useful without turning into a dashboard maze."
-      />
-
-      <View style={styles.metricGrid}>
-        {health.metricCards.map((metric) => (
-          <MetricCard key={metric.id} metric={metric} />
-        ))}
-      </View>
-    </Screen>
+      <Pressable
+        style={({ pressed }) => [styles.askCoachButton, pressed && styles.pressed]}
+        onPress={() => onAskCoach("Give me a plan for today based on the latest synced wearable data.")}
+      >
+        <Text style={styles.askCoachText}>Ask Coach</Text>
+      </Pressable>
+    </ScrollView>
   );
 }
 
@@ -591,122 +542,210 @@ function ProgressScreen({
   healthLoading,
   healthError,
   onRetry,
-  onAskCoach,
 }: {
   health: LatestHealthResponse | null;
   timeline: HealthTimelineResponse | null;
   healthLoading: boolean;
   healthError: string | null;
   onRetry: () => void;
-  onAskCoach: (prompt?: string) => Promise<void>;
 }) {
   if (healthLoading && !timeline) {
     return (
-      <Screen bottomPadding={140}>
-        <Card>
-          <ActivityIndicator color={palette.text} />
-          <Text style={styles.loadingCardText}>Loading the recent trend view.</Text>
-        </Card>
-      </Screen>
+      <EmptyState
+        title="Loading progress"
+        body="Fetching the seven-day trend view."
+        loading
+        onRetry={onRetry}
+      />
     );
   }
 
-  if (!timeline || !health) {
+  if (!health || !timeline) {
     return (
-      <Screen bottomPadding={140}>
-        <Card>
-          <Text style={styles.cardTitle}>Progress data is unavailable</Text>
-          <Text style={styles.cardBody}>
-            {healthError || "Load a mock sync scenario to populate the progress view."}
-          </Text>
-          <View style={styles.questionActions}>
-            <PrimaryButton label="Retry" onPress={onRetry} />
-          </View>
-        </Card>
-      </Screen>
+      <EmptyState
+        title="Progress data is unavailable"
+        body={healthError || "Load a mock sync scenario to populate the trend view."}
+        onRetry={onRetry}
+      />
     );
   }
+
+  const hrvMetric = health.metricCards.find((metric) => metric.id === "hrv");
+  const stressMetric = health.metricCards.find((metric) => metric.id === "stress");
+  const avgRecovery = average(timeline.points.map((point) => point.recoveryScore));
+  const avgSleep = average(timeline.points.map((point) => point.sleepScore));
 
   return (
-    <Screen bottomPadding={150}>
-      <SectionTitle
-        eyebrow="Progress"
-        title="The trend matters more than the metric."
-        subtitle="Use the last 7 days to understand the pattern, not to obsess over a single reading."
-      />
+    <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
+      <Card style={styles.coachingInsight}>
+        <View style={styles.insightIcon}>
+          <Text style={styles.insightIconText}>AI</Text>
+        </View>
+        <Text style={styles.summaryTitle}>
+          {avgRecovery >= 60 ? "Looking steadier" : "Recovery needs attention"}
+        </Text>
+        <Text style={styles.cardBody}>{timeline.trendSummary}</Text>
+      </Card>
+
+      <View style={styles.twoColumn}>
+        <StatCard
+          label="HRV"
+          value={hrvMetric?.value ?? `${health.latestDay.hrv} ms`}
+          context={`vs ${health.latestDay.hrvBaseline} ms baseline`}
+          tone="caution"
+        />
+        <StatCard
+          label="Resting HR"
+          value={`${health.latestDay.restingHeartRate} bpm`}
+          context="Latest synced day"
+          tone="good"
+        />
+      </View>
+
+      <Card style={styles.stepsCard}>
+        <View>
+          <Text style={styles.metricLabel}>Daily Steps</Text>
+          <Text style={styles.stepsValue}>
+            {health.latestDay.steps.toLocaleString()}
+            <Text style={styles.stepsGoal}> / {health.latestDay.stepGoal.toLocaleString()}</Text>
+          </Text>
+        </View>
+        <RingProgress percent={health.latestDay.steps / health.latestDay.stepGoal} />
+      </Card>
 
       <Card>
-        <Text style={styles.summaryHeadline}>{timeline.trendSummary}</Text>
-        <Text style={styles.cardBody}>{health.scenarioSummary}</Text>
-        <View style={styles.heroButtons}>
-          <View style={styles.heroButton}>
-            <SecondaryButton
-              label="Ask coach what changed"
-              onPress={() => {
-                void onAskCoach("What changed across the last week and what should I do next?");
-              }}
-            />
-          </View>
+        <View style={styles.rowBetween}>
+          <Text style={styles.cardTitle}>Recovery</Text>
+          <Text style={styles.rangePill}>7 Days</Text>
+        </View>
+        <TrendBars points={timeline.points} valueKey="recoveryScore" color={palette.sage} />
+      </Card>
+
+      <Card>
+        <Text style={styles.cardTitle}>Pattern snapshot</Text>
+        <View style={styles.proxyGrid}>
+          <MiniStat label="Avg recovery" value={`${avgRecovery}/100`} />
+          <MiniStat label="Avg sleep" value={`${avgSleep}/100`} />
+          <MiniStat label="Stress" value={stressMetric?.value ?? health.latestDay.stressLabel} />
         </View>
       </Card>
 
-      <SectionTitle
-        eyebrow="Seven-day timeline"
-        title="Recent health pattern"
-        subtitle="Recovery, sleep, HRV, movement, and stress side by side."
-      />
-
       {timeline.points.map((point) => (
-        <Card key={point.date}>
-          <View style={styles.workoutHeader}>
-            <View>
-              <Text style={styles.cardTitle}>{formatShortDate(point.date)}</Text>
-              <Text style={styles.workoutMeta}>Mock bracelet sync day</Text>
-            </View>
-            <Text style={styles.workoutEffort}>HRV {point.hrv}</Text>
-          </View>
-          <View style={styles.timelineRow}>
-            <MiniStat label="Recovery" value={`${point.recoveryScore}/100`} />
-            <MiniStat label="Sleep" value={`${point.sleepScore}/100`} />
-            <MiniStat label="Stress" value={`${point.stressScore}/100`} />
-          </View>
-          <Text style={styles.progressFootnote}>
-            {point.steps.toLocaleString()} steps
-          </Text>
-        </Card>
+        <TimelinePointCard key={point.date} point={point} />
       ))}
-
-      <SectionTitle
-        eyebrow="Current snapshot"
-        title="Where the latest day landed"
-        subtitle="A compact summary of the most recent sync."
-      />
-
-      <Card>
-        <Text style={styles.cardBody}>
-          Sleep {formatSleep(health.latestDay.sleepDurationMinutes)} • Recovery{" "}
-          {health.latestDay.recoveryScore}/100 • Stress {health.latestDay.stressLabel} •
-          Glucose proxy {health.latestDay.glucoseProxy}
-        </Text>
-      </Card>
-    </Screen>
+    </ScrollView>
   );
 }
 
-function YouScreen({
+function CoachScreen({
+  messages,
+  input,
+  setInput,
+  loading,
+  onSend,
+  onPrompt,
+}: {
+  messages: CoachMessage[];
+  input: string;
+  setInput: (value: string) => void;
+  loading: boolean;
+  onSend: () => void;
+  onPrompt: (prompt: string) => void;
+}) {
+  return (
+    <View style={styles.coachScreen}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.chatContent}>
+        <Text style={styles.chatTimestamp}>Today, 8:30 AM</Text>
+        {messages.map((message) => (
+          <View
+            key={message.id}
+            style={[
+              styles.messageRow,
+              message.role === "user" ? styles.messageRowUser : styles.messageRowCoach,
+            ]}
+          >
+            {message.role === "assistant" ? (
+              <View style={styles.coachAvatar}>
+                <Text style={styles.coachAvatarText}>AI</Text>
+              </View>
+            ) : null}
+            <View
+              style={[
+                styles.messageBubble,
+                message.role === "user" ? styles.userBubble : styles.coachBubble,
+              ]}
+            >
+              <Text style={message.role === "user" ? styles.userBubbleText : styles.coachBubbleText}>
+                {message.text}
+              </Text>
+            </View>
+          </View>
+        ))}
+        {loading ? <Text style={styles.footnote}>Coach is thinking...</Text> : null}
+      </ScrollView>
+
+      <View style={styles.chatComposerWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.promptScroller}
+        >
+          {defaultQuickPrompts.map((prompt) => (
+            <Pressable
+              key={prompt}
+              style={({ pressed }) => [styles.promptChip, pressed && styles.pressed]}
+              onPress={() => onPrompt(prompt)}
+            >
+              <Text style={styles.promptChipText}>{prompt}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <View style={styles.chatInputRow}>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Ask your coach..."
+            placeholderTextColor={palette.textFaint}
+            style={styles.chatInput}
+            returnKeyType="send"
+            onSubmitEditing={onSend}
+          />
+          <Pressable
+            disabled={!input.trim() || loading}
+            style={({ pressed }) => [
+              styles.sendButton,
+              (!input.trim() || loading) && styles.disabledButton,
+              pressed && input.trim() && !loading && styles.pressed,
+            ]}
+            onPress={onSend}
+          >
+            <Text style={styles.sendButtonText}>Send</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ProfileScreen({
   profile,
   latestHealth,
 }: {
   profile: UserProfile;
   latestHealth: LatestHealthResponse | null;
 }) {
+  const directSignals = ["Sleep", "HRV", "Heart Rate", "Steps", "SpO2", "Temperature"];
+
   return (
-    <Screen bottomPadding={140}>
-      <SectionTitle
-        eyebrow="You"
-        title="How the app understands your day"
-        subtitle="Profile, trust model, and the current mock-to-real device pipeline."
-      />
+    <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
+      <Card style={styles.heroCard}>
+        <Text style={styles.cardTitle}>Study Details</Text>
+        <Text style={styles.cardBody}>
+          You are enrolled in the AI Health Coach research prototype. Your bracelet syncs to
+          the phone app and helps us study student stress, recovery, and daily coaching patterns.
+        </Text>
+        <Text style={styles.idBadge}>Participant ID #12345</Text>
+      </Card>
 
       <Card>
         <Text style={styles.cardTitle}>{profile.name || "Your profile"}</Text>
@@ -718,132 +757,221 @@ function YouScreen({
         </Text>
       </Card>
 
+      <SectionHeading title="Direct Signals" />
+      <Text style={styles.sectionBody}>Measurements collected directly from the wearable device.</Text>
+      <View style={styles.signalGrid}>
+        {directSignals.map((signal) => (
+          <View key={signal} style={styles.signalCard}>
+            <View style={styles.signalIcon}>
+              <Text style={styles.signalIconText}>{signal.slice(0, 2).toUpperCase()}</Text>
+            </View>
+            <Text style={styles.signalTitle}>{signal}</Text>
+            <Text style={styles.signalStatus}>Active</Text>
+          </View>
+        ))}
+      </View>
+
+      <SectionHeading title="Proxy Indicators" />
+      <Card style={styles.noticeCard}>
+        <Text style={styles.cardBody}>
+          Proxy indicators are estimated from direct signals. These are proxy indicators only,
+          not medical values, and should not be used for diagnosis.
+        </Text>
+      </Card>
+
+      <View style={styles.twoColumn}>
+        <ProxyDetailCard
+          title="Glucose proxy"
+          value={latestHealth?.latestDay.glucoseProxy ?? "Caution"}
+          body="Estimated from sleep, activity, and routine timing patterns."
+          color={palette.coral}
+        />
+        <ProxyDetailCard
+          title="Nitric oxide proxy"
+          value={latestHealth?.latestDay.nitricOxideProxy ?? "Could improve"}
+          body="Estimated cardiovascular support signal derived from movement and recovery context."
+          color={palette.blue}
+        />
+      </View>
+
       <Card>
         <Text style={styles.cardTitle}>Current ingestion model</Text>
         <Text style={styles.cardBody}>
-          The manufacturer stores about 7 days on-device, then syncs data over Bluetooth to the phone app. Right now this repo uses mock post-sync payloads that match that architecture so the dashboard and coaching logic can be built before the watch arrives.
+          Bracelet data is stored on-device, synced over Bluetooth to the phone, normalized by
+          the app/backend, and then used by coaching plus the research dashboard.
         </Text>
         {latestHealth ? (
-          <Text style={styles.progressFootnote}>
-            Active scenario: {latestHealth.scenarioLabel}
-          </Text>
+          <Text style={styles.footnote}>Active scenario: {latestHealth.scenarioLabel}</Text>
         ) : null}
       </Card>
-
-      <SectionTitle
-        eyebrow="Trust"
-        title="Direct, proxy, and context signals"
-        subtitle="Most of the app translates signals into plain language instead of exposing raw measurements."
-      />
-
-      {researchSignals.map((signal) => (
-        <Card key={signal.title}>
-          <View style={styles.metricTopRow}>
-            <View>
-              <Text style={styles.cardTitle}>{signal.title}</Text>
-              <Text style={styles.metricBaseline}>{signal.directness} signal</Text>
-            </View>
-            <View style={styles.directnessBadge}>
-              <Text style={styles.directnessText}>{signal.directness}</Text>
-            </View>
-          </View>
-          <Text style={styles.cardBody}>{signal.summary}</Text>
-        </Card>
-      ))}
-
-      <Card>
-        <Text style={styles.cardTitle}>Current sensor model</Text>
-        {sensors.map((sensor) => (
-          <View key={sensor.name} style={styles.sensorRow}>
-            <Text style={styles.sensorName}>{sensor.name}</Text>
-            <Text style={styles.sensorBody}>{sensor.purpose}</Text>
-          </View>
-        ))}
-      </Card>
-    </Screen>
+    </ScrollView>
   );
 }
 
-function CoachScreen({
-  messages,
-  input,
-  setInput,
-  loading,
-  keyboardVisible,
-  onSend,
+function BottomTabs({
+  activeTab,
+  onChange,
 }: {
-  messages: CoachMessage[];
-  input: string;
-  setInput: (value: string) => void;
-  loading: boolean;
-  keyboardVisible: boolean;
-  onSend: () => void;
+  activeTab: TabKey;
+  onChange: (tab: TabKey) => void;
 }) {
   return (
-    <Screen bottomPadding={keyboardVisible ? 32 : 140}>
-      <SectionTitle
-        eyebrow="Coach"
-        title="Short answers. Clear actions."
-        subtitle="Chat is still the only open-ended AI surface."
-      />
-
-      <Card>
-        <View style={styles.quickPromptWrap}>
-          {[
-            "Give me a plan for today",
-            "What matters most right now?",
-            "How is sleep affecting me?",
-          ].map((prompt) => (
-            <Pressable key={prompt} onPress={() => setInput(prompt)} style={styles.quickPrompt}>
-              <Text style={styles.quickPromptText}>{prompt}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </Card>
-
-      {messages.map((message) => (
-        <Card
-          key={message.id}
-          style={message.role === "assistant" ? styles.assistantBubble : styles.userBubble}
-        >
-          <Text style={styles.messageRole}>
-            {message.role === "assistant" ? "Coach" : "You"}
-          </Text>
-          <Text style={styles.cardBody}>{message.text}</Text>
-        </Card>
-      ))}
-
-      <Card>
-        <AppTextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder="Ask your coach anything"
-          multiline
-        />
-        <View style={styles.questionActions}>
-          <PrimaryButton
-            label={loading ? "Thinking..." : "Send"}
-            onPress={onSend}
-            disabled={!input.trim() || loading}
-          />
-        </View>
-      </Card>
-    </Screen>
+    <View style={styles.tabBar}>
+      {(Object.keys(tabLabels) as TabKey[]).map((key) => {
+        const active = key === activeTab;
+        return (
+          <Pressable
+            key={key}
+            onPress={() => onChange(key)}
+            style={({ pressed }) => [
+              styles.tabItem,
+              active && styles.tabItemActive,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.tabGlyph, active && styles.tabGlyphActive]}>{tabGlyphs[key]}</Text>
+            <Text style={[styles.tabText, active && styles.tabTextActive]}>{tabLabels[key]}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
-function MetricCard({ metric }: { metric: HealthMetricCard }) {
+function SectionHeading({ title }: { title: string }) {
+  return <Text style={styles.sectionTitle}>{title}</Text>;
+}
+
+function MetricBentoCard({ metric, large }: { metric: HealthMetricCard; large?: boolean }) {
+  const progressWidth: DimensionValue =
+    metric.id === "recovery" ? (metric.value.replace("/100", "%") as DimensionValue) : "58%";
+
   return (
-    <Card style={styles.metricCard}>
-      <View
-        style={[
-          styles.metricAccentBar,
-          { backgroundColor: toneColor(metric.tone) },
-        ]}
-      />
-      <Text style={styles.metricCardLabel}>{metric.label}</Text>
-      <Text style={styles.metricCardValue}>{metric.value}</Text>
-      <Text style={styles.metricCardContext}>{metric.context}</Text>
+    <Card style={[styles.bentoCard, large && styles.bentoCardLarge]}>
+      <View style={styles.rowBetween}>
+        <Text style={[styles.metricInitial, { color: toneColor(metric.tone) }]}>
+          {metric.label.slice(0, 1)}
+        </Text>
+        <Text style={[styles.bentoValue, { color: toneColor(metric.tone) }]}>{metric.value}</Text>
+      </View>
+      <View>
+        <Text style={styles.metricLabel}>{metric.label}</Text>
+        <Text style={styles.cardBody}>{metric.context}</Text>
+      </View>
+      <View style={styles.progressTrack}>
+        <View
+          style={[
+            styles.progressFill,
+            {
+              backgroundColor: toneColor(metric.tone),
+              width: progressWidth,
+            },
+          ]}
+        />
+      </View>
+    </Card>
+  );
+}
+
+function ActionRow({ title, text }: { title: string; text: string }) {
+  return (
+    <View style={styles.actionRow}>
+      <View style={styles.checkbox} />
+      <View style={styles.actionCopy}>
+        <Text style={styles.actionTitle}>{title}</Text>
+        <Text style={styles.actionText}>{text}</Text>
+      </View>
+    </View>
+  );
+}
+
+function InsightCard({ insight }: { insight: HealthInsight }) {
+  return (
+    <Card style={[styles.insightCard, { borderColor: toneSoftColor(insight.tone) }]}>
+      <View style={[styles.accentDot, { backgroundColor: toneColor(insight.tone) }]} />
+      <Text style={styles.cardTitle}>{insight.title}</Text>
+      <Text style={styles.cardBody}>{insight.text}</Text>
+    </Card>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  context,
+  tone,
+}: {
+  label: string;
+  value: string;
+  context: string;
+  tone: "good" | "caution" | "alert" | "neutral";
+}) {
+  return (
+    <Card style={styles.statCard}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={[styles.footnote, { color: toneColor(tone) }]}>{context}</Text>
+    </Card>
+  );
+}
+
+function RingProgress({ percent }: { percent: number }) {
+  const clamped = Math.max(0, Math.min(1, percent));
+  return (
+    <View style={styles.ring}>
+      <Text style={styles.ringText}>{Math.round(clamped * 100)}%</Text>
+    </View>
+  );
+}
+
+function TrendBars({
+  points,
+  valueKey,
+  color,
+}: {
+  points: HealthTimelinePoint[];
+  valueKey: "recoveryScore" | "sleepScore" | "stressScore";
+  color: string;
+}) {
+  const max = Math.max(...points.map((point) => point[valueKey]), 100);
+
+  return (
+    <View style={styles.trendBars}>
+      {points.map((point) => {
+        const height = Math.max(8, (point[valueKey] / max) * 86);
+        return (
+          <View key={point.date} style={styles.trendDay}>
+            <View style={styles.trendTrack}>
+              <View style={[styles.trendFill, { height, backgroundColor: color }]} />
+            </View>
+            <Text style={styles.trendLabel}>
+              {new Date(`${point.date}T00:00:00`).toLocaleDateString("en-US", {
+                weekday: "narrow",
+              })}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function TimelinePointCard({ point }: { point: HealthTimelinePoint }) {
+  return (
+    <Card style={styles.timelineCard}>
+      <View style={styles.rowBetween}>
+        <View>
+          <Text style={styles.cardTitle}>{formatShortDate(point.date)}</Text>
+          <Text style={styles.footnote}>Mock bracelet sync day</Text>
+        </View>
+        <Text style={styles.hrvLabel}>HRV {point.hrv}</Text>
+      </View>
+      <View style={styles.proxyGrid}>
+        <MiniStat label="Recovery" value={`${point.recoveryScore}/100`} />
+        <MiniStat label="Sleep" value={`${point.sleepScore}/100`} />
+        <MiniStat label="Stress" value={`${point.stressScore}/100`} />
+      </View>
+      <Text style={styles.footnote}>{point.steps.toLocaleString()} steps</Text>
     </Card>
   );
 }
@@ -857,10 +985,45 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ProxyDetailCard({
+  title,
+  value,
+  body,
+  color,
+}: {
+  title: string;
+  value: string;
+  body: string;
+  color: string;
+}) {
+  return (
+    <Card style={[styles.proxyDetail, { borderLeftColor: color }]}>
+      <View style={styles.rowBetween}>
+        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={[styles.proxyBadge, { color }]}>{value}</Text>
+      </View>
+      <Text style={styles.cardBody}>{body}</Text>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: "58%", backgroundColor: color }]} />
+      </View>
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: palette.canvas,
+  },
+  content: {
+    flex: 1,
+    backgroundColor: palette.canvas,
+  },
+  screenContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 132,
+    gap: spacing.lg,
   },
   loadingWrap: {
     flex: 1,
@@ -873,255 +1036,253 @@ const styles = StyleSheet.create({
     color: palette.textMuted,
     fontSize: 14,
   },
-  loadingCardText: {
-    marginTop: spacing.sm,
-    color: palette.textMuted,
-    fontSize: 14,
+  onboardingContent: {
+    padding: spacing.lg,
+    gap: spacing.lg,
   },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: spacing.md,
+  onboardingHero: {
+    gap: spacing.sm,
   },
-  headerGreeting: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: palette.text,
-  },
-  headerSubtext: {
-    marginTop: 4,
-    maxWidth: 260,
-    fontSize: 14,
-    lineHeight: 20,
-    color: palette.textMuted,
-  },
-  headerBadge: {
-    backgroundColor: palette.surface,
-    borderWidth: 1,
-    borderColor: palette.line,
+  pill: {
+    alignSelf: "flex-start",
+    backgroundColor: palette.sage,
     borderRadius: radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  headerBadgeText: {
-    color: palette.text,
+    color: palette.surface,
     fontSize: 12,
     fontWeight: "700",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  heroCard: {
-    gap: spacing.md,
+  onboardingTitle: {
+    color: palette.text,
+    fontSize: 31,
+    fontWeight: "700",
+    lineHeight: 38,
+  },
+  onboardingBody: {
+    color: palette.textMuted,
+    fontSize: 16,
+    lineHeight: 24,
   },
   questionCounter: {
-    color: palette.textMuted,
+    color: palette.textFaint,
     fontSize: 13,
     marginBottom: spacing.sm,
   },
   questionText: {
     color: palette.text,
     fontSize: 24,
-    lineHeight: 30,
     fontWeight: "700",
+    lineHeight: 31,
     marginBottom: spacing.md,
   },
-  questionActions: {
+  primaryAction: {
     marginTop: spacing.md,
   },
-  tabBar: {
-    position: "absolute",
-    left: spacing.lg,
-    right: spacing.lg,
-    bottom: spacing.md,
-    backgroundColor: palette.surface,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: palette.line,
-    flexDirection: "row",
-    padding: 8,
-    gap: 6,
-  },
-  tabItem: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: radius.md,
+  header: {
+    height: 64,
     alignItems: "center",
-  },
-  tabItemActive: {
-    backgroundColor: palette.surfaceMuted,
-  },
-  tabLabel: {
-    color: palette.textMuted,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  tabLabelActive: {
-    color: palette.text,
-  },
-  floatingCoachButton: {
-    position: "absolute",
-    right: spacing.lg,
-    bottom: 98,
-    backgroundColor: palette.text,
-    borderRadius: radius.pill,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    shadowColor: palette.shadow,
-    shadowOpacity: 1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 5,
-  },
-  floatingCoachPressed: {
-    opacity: 0.94,
-  },
-  floatingCoachIcon: {
-    color: palette.surface,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  floatingCoachText: {
-    color: palette.surface,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  coachSheetOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "flex-end",
-    paddingHorizontal: spacing.lg,
-    paddingTop: 88,
-    paddingBottom: 94,
-    backgroundColor: "rgba(30, 42, 38, 0.10)",
-  },
-  coachSheetWrap: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  coachSheet: {
-    flex: 1,
-    maxHeight: "100%",
-    backgroundColor: palette.canvas,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: palette.line,
-    overflow: "hidden",
-    shadowColor: palette.shadow,
-    shadowOpacity: 1,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    width: 44,
-    height: 5,
-    borderRadius: radius.pill,
-    backgroundColor: palette.line,
-    marginTop: 10,
-  },
-  modalHeader: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: palette.canvas,
   },
-  modalTitle: {
-    color: palette.text,
-    fontSize: 26,
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.sageSoft,
+  },
+  avatarText: {
+    color: palette.sage,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  headerCenter: {
+    alignItems: "center",
+  },
+  headerTitle: {
+    color: palette.sage,
+    fontSize: 20,
     fontWeight: "700",
   },
-  modalSubtitle: {
-    marginTop: 4,
-    color: palette.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
-    maxWidth: 260,
+  headerSubtitle: {
+    color: palette.textFaint,
+    fontSize: 11,
+    marginTop: 2,
   },
-  modalClose: {
-    backgroundColor: palette.surface,
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: palette.line,
-    borderRadius: radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    backgroundColor: palette.surface,
   },
-  modalCloseText: {
-    color: palette.text,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  morningHero: {
-    gap: spacing.sm,
-  },
-  heroEyebrow: {
+  iconButtonText: {
     color: palette.sage,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  pressed: {
+    opacity: 0.82,
+  },
+  centerCard: {
+    gap: spacing.md,
+    alignItems: "flex-start",
+  },
+  heroCard: {
+    gap: spacing.md,
+    overflow: "hidden",
+  },
+  ambientBlob: {
+    position: "absolute",
+    right: -54,
+    top: -54,
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: palette.coralSoft,
+    opacity: 0.45,
   },
   heroTitle: {
     color: palette.text,
-    fontSize: 30,
-    lineHeight: 36,
+    fontSize: 32,
     fontWeight: "700",
+    letterSpacing: -0.6,
+    lineHeight: 38,
   },
   heroBody: {
     color: palette.textMuted,
     fontSize: 16,
     lineHeight: 24,
   },
-  syncFootnote: {
-    color: palette.textMuted,
-    fontSize: 13,
-  },
-  heroButtons: {
-    marginTop: spacing.sm,
-  },
-  heroButton: {
-    width: "100%",
-  },
-  scenarioWrap: {
-    gap: spacing.sm,
-  },
-  scenarioChip: {
-    borderWidth: 1,
-    borderColor: palette.line,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    backgroundColor: palette.surfaceMuted,
-    gap: 6,
-  },
-  scenarioChipActive: {
-    backgroundColor: palette.sageSoft,
-    borderColor: palette.sage,
-  },
-  scenarioChipTitle: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  scenarioChipTitleActive: {
-    color: palette.text,
-  },
-  scenarioChipBody: {
-    color: palette.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  inlineTitleRow: {
+  syncRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: radius.pill,
+  },
+  syncText: {
+    color: palette.textMuted,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  tagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
-    marginBottom: spacing.sm,
+  },
+  softTag: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radius.pill,
+    color: palette.textMuted,
+    fontSize: 13,
+    fontWeight: "700",
+    overflow: "hidden",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  bentoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+  },
+  bentoCard: {
+    width: "47.8%",
+    minHeight: 162,
+    justifyContent: "space-between",
+  },
+  bentoCardLarge: {
+    width: "100%",
+    minHeight: 176,
+  },
+  rowBetween: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  metricInitial: {
+    fontSize: 24,
+    fontWeight: "800",
+  },
+  bentoValue: {
+    fontSize: 24,
+    fontWeight: "800",
+  },
+  metricLabel: {
+    color: palette.textMuted,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: palette.surfaceRaised,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: radius.pill,
+  },
+  sectionTitle: {
+    color: palette.text,
+    fontSize: 22,
+    fontWeight: "700",
+    lineHeight: 28,
+  },
+  sectionBody: {
+    color: palette.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: -12,
+  },
+  actionList: {
+    paddingVertical: spacing.sm,
+  },
+  actionRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.line,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: palette.outline,
+    marginTop: 2,
+  },
+  actionCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  actionTitle: {
+    color: palette.text,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  actionText: {
+    color: palette.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  insightCard: {
+    borderWidth: 1.5,
+    gap: spacing.sm,
   },
   accentDot: {
     width: 10,
@@ -1132,87 +1293,17 @@ const styles = StyleSheet.create({
     color: palette.text,
     fontSize: 18,
     fontWeight: "700",
+    lineHeight: 24,
   },
   cardBody: {
     color: palette.textMuted,
     fontSize: 15,
     lineHeight: 22,
   },
-  planTitle: {
-    color: palette.text,
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: spacing.sm,
-  },
-  planItem: {
-    paddingVertical: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: palette.line,
-  },
-  planLabel: {
-    color: palette.text,
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  planValue: {
-    color: palette.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  metricGrid: {
+  proxyCard: {
     gap: spacing.md,
   },
-  metricCard: {
-    gap: spacing.sm,
-  },
-  metricAccentBar: {
-    width: 40,
-    height: 4,
-    borderRadius: radius.pill,
-  },
-  metricCardLabel: {
-    color: palette.textMuted,
-    fontSize: 13,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  metricCardValue: {
-    color: palette.text,
-    fontSize: 28,
-    lineHeight: 32,
-    fontWeight: "700",
-  },
-  metricCardContext: {
-    color: palette.textMuted,
-    fontSize: 14,
-  },
-  summaryHeadline: {
-    color: palette.text,
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: "700",
-    marginBottom: spacing.sm,
-  },
-  workoutHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  workoutMeta: {
-    color: palette.textMuted,
-    fontSize: 13,
-    marginTop: 4,
-  },
-  workoutEffort: {
-    color: palette.sage,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  timelineRow: {
+  proxyGrid: {
     flexDirection: "row",
     gap: spacing.sm,
     marginTop: spacing.sm,
@@ -1221,91 +1312,416 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: palette.surfaceMuted,
     borderRadius: radius.md,
-    padding: spacing.sm,
+    padding: spacing.md,
   },
   miniStatLabel: {
     color: palette.textMuted,
-    fontSize: 12,
-    fontWeight: "700",
-    marginBottom: 4,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
   miniStatValue: {
     color: palette.text,
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "800",
+    marginTop: 5,
   },
-  progressFootnote: {
-    color: palette.textMuted,
-    fontSize: 13,
-    marginTop: spacing.sm,
+  scenarioWrap: {
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
-  metricTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  metricBaseline: {
-    color: palette.textMuted,
-    fontSize: 13,
-    marginTop: 4,
-  },
-  directnessBadge: {
+  scenarioChip: {
     backgroundColor: palette.surfaceMuted,
-    borderRadius: radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderColor: palette.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: 5,
+    padding: spacing.md,
   },
-  directnessText: {
-    color: palette.text,
-    fontSize: 11,
-    fontWeight: "700",
+  scenarioChipActive: {
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
   },
-  sensorRow: {
-    paddingVertical: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: palette.line,
-  },
-  sensorName: {
+  scenarioTitle: {
     color: palette.text,
     fontSize: 15,
-    fontWeight: "700",
-    marginBottom: 4,
+    fontWeight: "800",
   },
-  sensorBody: {
+  scenarioTitleActive: {
+    color: palette.sage,
+  },
+  scenarioBody: {
     color: palette.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
   },
-  quickPromptWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  footnote: {
+    color: palette.textFaint,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: spacing.sm,
+  },
+  askCoachButton: {
+    alignItems: "center",
+    alignSelf: "flex-end",
+    backgroundColor: palette.sage,
+    borderRadius: radius.pill,
+    paddingHorizontal: 22,
+    paddingVertical: 15,
+  },
+  askCoachText: {
+    color: palette.surface,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  coachingInsight: {
+    alignItems: "center",
+    backgroundColor: palette.sageSoft,
     gap: spacing.sm,
   },
-  quickPrompt: {
-    backgroundColor: palette.surfaceMuted,
+  insightIcon: {
+    width: 48,
+    height: 48,
     borderRadius: radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  quickPromptText: {
-    color: palette.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  assistantBubble: {
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: palette.surface,
   },
-  userBubble: {
-    backgroundColor: palette.sageSoft,
+  insightIconText: {
+    color: palette.sage,
+    fontSize: 13,
+    fontWeight: "900",
   },
-  messageRole: {
+  summaryTitle: {
+    color: palette.text,
+    fontSize: 21,
+    fontWeight: "800",
+  },
+  twoColumn: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  statCard: {
+    flex: 1,
+    gap: spacing.sm,
+  },
+  statValue: {
+    color: palette.text,
+    fontSize: 31,
+    fontWeight: "800",
+    letterSpacing: -0.6,
+  },
+  stepsCard: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  stepsValue: {
+    color: palette.text,
+    fontSize: 26,
+    fontWeight: "800",
+  },
+  stepsGoal: {
+    color: palette.textFaint,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  ring: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 7,
+    borderColor: palette.blue,
+    backgroundColor: palette.blueSoft,
+  },
+  ringText: {
+    color: palette.blue,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  rangePill: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radius.pill,
     color: palette.textMuted,
     fontSize: 12,
+    fontWeight: "800",
+    overflow: "hidden",
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
+  trendBars: {
+    height: 132,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginTop: spacing.lg,
+  },
+  trendDay: {
+    alignItems: "center",
+    flex: 1,
+    gap: spacing.sm,
+  },
+  trendTrack: {
+    width: 9,
+    height: 92,
+    borderRadius: radius.pill,
+    backgroundColor: palette.surfaceRaised,
+    justifyContent: "flex-end",
+    overflow: "hidden",
+  },
+  trendFill: {
+    width: "100%",
+    borderRadius: radius.pill,
+  },
+  trendLabel: {
+    color: palette.textFaint,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  timelineCard: {
+    gap: spacing.sm,
+  },
+  hrvLabel: {
+    color: palette.sage,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  coachScreen: {
+    flex: 1,
+    backgroundColor: palette.canvas,
+  },
+  chatContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 232,
+    gap: spacing.lg,
+  },
+  chatTimestamp: {
+    color: palette.textFaint,
+    fontSize: 12,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  messageRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    maxWidth: "90%",
+  },
+  messageRowCoach: {
+    alignSelf: "flex-start",
+  },
+  messageRowUser: {
+    alignSelf: "flex-end",
+  },
+  coachAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.sageSoft,
+    marginTop: 4,
+  },
+  coachAvatarText: {
+    color: palette.sage,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  messageBubble: {
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  coachBubble: {
+    backgroundColor: palette.surface,
+    borderBottomLeftRadius: 4,
+    borderColor: palette.line,
+    borderWidth: 1,
+  },
+  userBubble: {
+    backgroundColor: palette.sage,
+    borderBottomRightRadius: 4,
+  },
+  coachBubbleText: {
+    color: palette.text,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  userBubbleText: {
+    color: palette.surface,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  chatComposerWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 86,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.md,
+    backgroundColor: palette.canvas,
+    gap: spacing.sm,
+  },
+  promptScroller: {
+    gap: spacing.sm,
+    paddingRight: spacing.lg,
+  },
+  promptChip: {
+    backgroundColor: palette.surfaceMuted,
+    borderColor: palette.line,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  promptChipText: {
+    color: palette.textMuted,
+    fontSize: 13,
     fontWeight: "700",
-    marginBottom: spacing.sm,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+  },
+  chatInputRow: {
+    alignItems: "center",
+    backgroundColor: palette.surface,
+    borderColor: palette.line,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: 8,
+  },
+  chatInput: {
+    flex: 1,
+    color: palette.text,
+    fontSize: 15,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  sendButton: {
+    backgroundColor: palette.sage,
+    borderRadius: radius.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+  disabledButton: {
+    opacity: 0.45,
+  },
+  sendButtonText: {
+    color: palette.surface,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  idBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radius.pill,
+    color: palette.textMuted,
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: spacing.md,
+    overflow: "hidden",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  signalGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+  },
+  signalCard: {
+    width: "47.8%",
+    alignItems: "center",
+    backgroundColor: palette.surface,
+    borderColor: palette.line,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  signalIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.blueSoft,
+  },
+  signalIconText: {
+    color: palette.blue,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  signalTitle: {
+    color: palette.text,
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  signalStatus: {
+    color: palette.sage,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  noticeCard: {
+    backgroundColor: palette.surfaceMuted,
+  },
+  proxyDetail: {
+    flex: 1,
+    borderLeftWidth: 4,
+    gap: spacing.md,
+  },
+  proxyBadge: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  tabBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    paddingTop: 10,
+    paddingBottom: 24,
+    paddingHorizontal: spacing.md,
+    backgroundColor: palette.surfaceMuted,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    shadowColor: palette.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 8,
+  },
+  tabItem: {
+    alignItems: "center",
+    borderRadius: radius.pill,
+    minWidth: 70,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  tabItemActive: {
+    backgroundColor: palette.sageSoft,
+  },
+  tabGlyph: {
+    color: palette.textMuted,
+    fontSize: 14,
+    fontWeight: "900",
+    marginBottom: 2,
+  },
+  tabGlyphActive: {
+    color: palette.sage,
+  },
+  tabText: {
+    color: palette.textMuted,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  tabTextActive: {
+    color: palette.sage,
   },
 });

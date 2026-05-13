@@ -1,4 +1,4 @@
-export type TabKey = "today" | "progress" | "you";
+export type TabKey = "today" | "progress" | "coach" | "you";
 
 export type MetricStatus =
   | "Good"

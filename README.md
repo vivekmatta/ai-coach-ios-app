@@ -7,7 +7,15 @@ This repo contains the `Expo React Native` mobile prototype for AI Coach.
 ```bash
 npm install
 npm run server
-npm start
+npm run start:mobile
+```
+
+Use `npm run start:mobile` for Expo on this machine. It forces Node 20 because Expo is unreliable under Node 24 here.
+
+If Expo Go cannot reach the Mac over campus Wi-Fi, use the tunnel script instead:
+
+```bash
+npm run start:mobile:tunnel
 ```
 
 The current health dashboard flow does not require live device hardware or Google credentials.
@@ -25,15 +33,32 @@ Optional AI chat integration:
 
 The mobile client does not read credentials directly. The local proxy server reads the secret server-side.
 
+## Research Dashboard
+
+The standalone web dashboard lives in `research-dashboard/` and uses local mock participant data for now.
+
+```bash
+cd research-dashboard
+npm install
+npm run dev
+```
+
+Production check:
+
+```bash
+npm run build
+```
+
 ## Product Direction
 
-The app is an iPhone-first research prototype for a screenless wearable companion. It focuses on:
+The mobile app is an iPhone-first research prototype for a screenless wearable companion. The web dashboard is a mock-data research portal for monitoring participant sync quality, trends, and follow-up flags. Together they focus on:
 
 - action-first daily coaching
 - insight-first health summaries instead of raw metric overload
 - proxy signals for glucose and nitric oxide
 - contextual health guidance across recovery, sleep, stress, movement, and environment
 - a mock-sync-first pipeline that mirrors the expected SDK data flow before the watch hardware arrives
+- a clean researcher view for 10-12 participant study operations
 
 ## Main Files
 
@@ -55,14 +80,23 @@ server/vertex-proxy.mjs
 server/build-vector-db.mjs
 server/vector-store.mjs
 server/vertex-client.mjs
+research-dashboard/
 ```
 
 ## Screens
 
+Mobile:
 - `Today` for the latest synced mock wearable summary, key insights, and action plan
 - `Progress` for the 7-day trend view
-- `You` for profile and research-facing signal explanations
 - `Coach` for AI coach chat
+- `Profile` for study details and research-facing signal explanations
+
+Web dashboard:
+- cohort overview
+- participant search/filter list
+- selected participant detail view
+- 7-day trend cards
+- research notes
 
 ## Stack
 
@@ -71,6 +105,7 @@ server/vertex-client.mjs
 - TypeScript
 - AsyncStorage
 - Node local proxy for structured health data and optional Vertex chat
+- Vite + React for the standalone research dashboard
 
 ## Design
 

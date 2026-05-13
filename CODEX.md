@@ -9,6 +9,7 @@ The current implementation is **mock-sync first**:
 - no native iOS bridge yet
 - no vendor cloud API dependency
 - structured wearable data comes from mock post-sync payloads that mirror the expected phone-side SDK flow
+- the standalone research dashboard currently uses local mock participant data
 
 Target architecture:
 
@@ -50,13 +51,43 @@ From the repo root:
 ```bash
 npm install
 npm run server
-npm start
+npm run start:mobile
 ```
+
+Use `npm run start:mobile` instead of plain `npm start` on this machine. It runs Expo with Homebrew Node 20 because Node 24 has caused Metro startup failures.
+
+If LAN mode fails on campus Wi-Fi, run:
+
+```bash
+npm run start:mobile:tunnel
+```
+
+Current mobile run notes:
+- Homebrew Node 20 is installed at `/opt/homebrew/opt/node@20/bin/node`.
+- `.nvmrc` is set to `20`, but the scripts use the explicit Homebrew Node 20 path so the app does not accidentally use global Node 24.
+- `@expo/ngrok` is installed locally so tunnel mode does not prompt during startup.
+- If Expo Go shows `Could not connect to development server` for `http://10.x.x.x:8081`, first confirm `npm run start:mobile` is still running. If campus Wi-Fi blocks LAN traffic, stop Expo and use `npm run start:mobile:tunnel`.
+- The backend server on port `8787` is only the health/coach API; it does not serve the Expo bundle. Expo/Metro must also be running on port `8081`.
 
 Phone testing:
 - keep the Mac and iPhone on the same Wi-Fi
 - open Expo Go
 - scan the QR code from Expo
+
+Research dashboard:
+
+```bash
+cd research-dashboard
+npm install
+npm run dev
+```
+
+Dashboard production check:
+
+```bash
+cd research-dashboard
+npm run build
+```
 
 ## What Exists Now
 
@@ -99,6 +130,19 @@ If Vertex AI is configured, chat uses:
 
 If the backend is unreachable, the mobile client still falls back to local canned responses.
 
+### Research dashboard
+
+The `research-dashboard/` app is a standalone Vite + React web dashboard with mock participant data. It is intentionally separate from Expo for now and does not call the local Node health endpoints yet.
+
+Current dashboard surfaces:
+- cohort overview cards
+- participant search and filters
+- selected participant details
+- data completeness and sync freshness
+- 7-day trend cards
+- proxy indicators clearly labeled as proxies
+- research notes UI
+
 ## Repo Structure
 
 ```text
@@ -123,6 +167,11 @@ server/
   vertex-client.mjs
   vector-store.mjs
   build-vector-db.mjs
+research-dashboard/
+  src/
+    App.tsx
+    mockData.ts
+    styles.css
 ```
 
 ## Product Rules
