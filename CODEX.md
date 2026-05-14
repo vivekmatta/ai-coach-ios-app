@@ -54,7 +54,7 @@ npm run server
 npm run start:mobile
 ```
 
-Use `npm run start:mobile` instead of plain `npm start` on this machine. It runs Expo with Homebrew Node 20 because Node 24 has caused Metro startup failures.
+Use `npm run start:mobile` instead of plain `npm start` on this machine. It runs Expo with Homebrew Node 20 because Node 24 has caused Metro startup failures, and it forces Expo to advertise the Mac Wi-Fi IP instead of loopback.
 
 If LAN mode fails on campus Wi-Fi, run:
 
@@ -65,6 +65,8 @@ npm run start:mobile:tunnel
 Current mobile run notes:
 - Homebrew Node 20 is installed at `/opt/homebrew/opt/node@20/bin/node`.
 - `.nvmrc` is set to `20`, but the scripts use the explicit Homebrew Node 20 path so the app does not accidentally use global Node 24.
+- `npm run start:mobile` sets `REACT_NATIVE_PACKAGER_HOSTNAME` from `en0` because Expo was otherwise publishing `127.0.0.1:8081` in the manifest even with `--lan`; that URL cannot work from Expo Go on an iPhone.
+- `metro.config.js` excludes `research-dashboard/`, `server/`, `data/`, and `secrets/` from the mobile bundle graph. The web dashboard has its own `node_modules`, which Metro should not crawl for the Expo app.
 - `@expo/ngrok` is installed locally so tunnel mode does not prompt during startup.
 - If Expo Go shows `Could not connect to development server` for `http://10.x.x.x:8081`, first confirm `npm run start:mobile` is still running. If campus Wi-Fi blocks LAN traffic, stop Expo and use `npm run start:mobile:tunnel`.
 - The backend server on port `8787` is only the health/coach API; it does not serve the Expo bundle. Expo/Metro must also be running on port `8081`.
@@ -146,6 +148,7 @@ Current dashboard surfaces:
 ## Repo Structure
 
 ```text
+index.js
 App.tsx
 package.json
 src/

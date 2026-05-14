@@ -10,13 +10,15 @@ npm run server
 npm run start:mobile
 ```
 
-Use `npm run start:mobile` for Expo on this machine. It forces Node 20 because Expo is unreliable under Node 24 here.
+Use `npm run start:mobile` for Expo on this machine. It forces Node 20 because Expo is unreliable under Node 24 here, and it publishes the Mac Wi-Fi IP to Expo Go instead of `127.0.0.1`.
 
 If Expo Go cannot reach the Mac over campus Wi-Fi, use the tunnel script instead:
 
 ```bash
 npm run start:mobile:tunnel
 ```
+
+Metro is configured to ignore the standalone `research-dashboard/`, server, data, and secrets folders when bundling the mobile app.
 
 The current health dashboard flow does not require live device hardware or Google credentials.
 
@@ -63,6 +65,7 @@ The mobile app is an iPhone-first research prototype for a screenless wearable c
 ## Main Files
 
 ```text
+index.js
 App.tsx
 src/MobileApp.tsx
 src/components.tsx
