@@ -8,6 +8,8 @@ import {
   participants,
 } from "./mockData";
 
+type DashboardView = "overview" | "participants" | "notes" | "settings";
+
 const filters: Array<{ key: FilterKey; label: string }> = [
   { key: "all", label: "All" },
   { key: "sync-risk", label: "Sync Risk" },
@@ -15,11 +17,21 @@ const filters: Array<{ key: FilterKey; label: string }> = [
   { key: "flagged", label: "Flagged" },
 ];
 
+const views: Array<{ key: DashboardView; label: string }> = [
+  { key: "overview", label: "Overview" },
+  { key: "participants", label: "Participants" },
+  { key: "notes", label: "Research Notes" },
+  { key: "settings", label: "Study Settings" },
+];
+
 export function App() {
+  const [view, setView] = useState<DashboardView>("overview");
   const [selectedId, setSelectedId] = useState(participants[4].id);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
-  const [note, setNote] = useState(participants[4].note);
+  const [notes, setNotes] = useState(() =>
+    Object.fromEntries(participants.map((participant) => [participant.id, participant.note]))
+  );
 
   const filteredParticipants = useMemo(() => {
     return participants.filter((participant) => {
@@ -37,10 +49,14 @@ export function App() {
   const selected =
     participants.find((participant) => participant.id === selectedId) ?? participants[0];
   const stats = cohortStats(participants);
+  const selectedNote = notes[selected.id] ?? "";
 
   function selectParticipant(participant: Participant) {
     setSelectedId(participant.id);
-    setNote(participant.note);
+  }
+
+  function updateSelectedNote(nextNote: string) {
+    setNotes((current) => ({ ...current, [selected.id]: nextNote }));
   }
 
   return (
@@ -51,10 +67,15 @@ export function App() {
           <p>Research Portal</p>
         </div>
         <nav className="side-nav">
-          <a className="active" href="#overview">Overview</a>
-          <a href="#participants">Participants</a>
-          <a href="#notes">Research Notes</a>
-          <a href="#settings">Study Settings</a>
+          {views.map((item) => (
+            <button
+              key={item.key}
+              className={view === item.key ? "active" : ""}
+              onClick={() => setView(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
         </nav>
         <div className="researcher">
           <span>RL</span>
@@ -76,85 +97,341 @@ export function App() {
         </header>
 
         <main className="dashboard">
-          <section className="overview-grid">
-            <OverviewCard label="Participants Enrolled" value={stats.enrolled} />
-            <OverviewCard label="Synced 24h" value={stats.synced} tone="good" />
-            <OverviewCard label="Missing Sync" value={stats.missing} tone="risk" />
-            <OverviewCard label="Active Flags" value={stats.activeFlags} tone="warn" />
-            <OverviewCard label="Avg Recovery" value={`${stats.averageRecovery}/100`} />
-            <OverviewCard label="Avg Sleep" value={`${stats.averageSleep}/100`} />
-          </section>
+          {view === "overview" ? (
+            <OverviewView
+              stats={stats}
+              selected={selected}
+              selectedNote={selectedNote}
+              filteredParticipants={filteredParticipants}
+              search={search}
+              filter={filter}
+              onSearch={setSearch}
+              onFilter={setFilter}
+              onSelectParticipant={selectParticipant}
+              onUpdateNote={updateSelectedNote}
+            />
+          ) : null}
 
-          <section className="split-grid">
-            <aside className="participant-panel" id="participants">
-              <div className="participant-tools">
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search ID..."
-                />
-                <div className="filter-row">
-                  {filters.map((item) => (
-                    <button
-                      key={item.key}
-                      className={filter === item.key ? "active" : ""}
-                      onClick={() => setFilter(item.key)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="participant-list">
-                {filteredParticipants.map((participant) => (
-                  <button
-                    key={participant.id}
-                    className={`participant-row ${
-                      selected.id === participant.id ? "selected" : ""
-                    }`}
-                    onClick={() => selectParticipant(participant)}
-                  >
-                    <div>
-                      <strong>{participant.id}</strong>
-                      <span>
-                        Rec: {participant.recovery || "-"} | Sleep:{" "}
-                        {participant.sleepHours ? `${participant.sleepHours}h` : "-"}
-                      </span>
-                    </div>
-                    <div className="participant-meta">
-                      <i className={`status-dot ${participant.syncStatus}`} />
-                      <small>{participant.lastSync}</small>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </aside>
+          {view === "participants" ? (
+            <ParticipantsView
+              selected={selected}
+              filteredParticipants={filteredParticipants}
+              search={search}
+              filter={filter}
+              onSearch={setSearch}
+              onFilter={setFilter}
+              onSelectParticipant={selectParticipant}
+            />
+          ) : null}
 
-            <section className="detail-column">
-              <ParticipantDetail participant={selected} />
-              <TrendSection trend={selected.trend} />
-              <section className="notes-card" id="notes">
-                <div className="notes-header">
-                  <h3>Research Notes</h3>
-                  <button>Save Note</button>
-                </div>
-                <textarea
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  placeholder={`Observations for ${selected.id}...`}
-                />
-                <div className="tag-row">
-                  <span>Follow up +</span>
-                  <span>Sync issue +</span>
-                  <span>Interesting pattern +</span>
-                  <span>Exclude day +</span>
-                </div>
-              </section>
-            </section>
-          </section>
+          {view === "notes" ? (
+            <NotesView
+              selected={selected}
+              notes={notes}
+              onSelectParticipant={selectParticipant}
+              onUpdateNote={updateSelectedNote}
+            />
+          ) : null}
+
+          {view === "settings" ? <SettingsView /> : null}
         </main>
       </div>
     </div>
+  );
+}
+
+function OverviewView({
+  stats,
+  selected,
+  selectedNote,
+  filteredParticipants,
+  search,
+  filter,
+  onSearch,
+  onFilter,
+  onSelectParticipant,
+  onUpdateNote,
+}: {
+  stats: ReturnType<typeof cohortStats>;
+  selected: Participant;
+  selectedNote: string;
+  filteredParticipants: Participant[];
+  search: string;
+  filter: FilterKey;
+  onSearch: (value: string) => void;
+  onFilter: (value: FilterKey) => void;
+  onSelectParticipant: (participant: Participant) => void;
+  onUpdateNote: (value: string) => void;
+}) {
+  return (
+    <>
+      <OverviewCards stats={stats} />
+      <section className="split-grid">
+        <ParticipantPanel
+          selected={selected}
+          participants={filteredParticipants}
+          search={search}
+          filter={filter}
+          onSearch={onSearch}
+          onFilter={onFilter}
+          onSelectParticipant={onSelectParticipant}
+        />
+        <section className="detail-column">
+          <ParticipantDetail participant={selected} />
+          <TrendSection trend={selected.trend} />
+          <NotesEditor note={selectedNote} participant={selected} onUpdateNote={onUpdateNote} />
+        </section>
+      </section>
+    </>
+  );
+}
+
+function ParticipantsView({
+  selected,
+  filteredParticipants,
+  search,
+  filter,
+  onSearch,
+  onFilter,
+  onSelectParticipant,
+}: {
+  selected: Participant;
+  filteredParticipants: Participant[];
+  search: string;
+  filter: FilterKey;
+  onSearch: (value: string) => void;
+  onFilter: (value: FilterKey) => void;
+  onSelectParticipant: (participant: Participant) => void;
+}) {
+  return (
+    <section className="split-grid participants-view">
+      <ParticipantPanel
+        selected={selected}
+        participants={filteredParticipants}
+        search={search}
+        filter={filter}
+        onSearch={onSearch}
+        onFilter={onFilter}
+        onSelectParticipant={onSelectParticipant}
+      />
+      <section className="detail-column">
+        <ParticipantDetail participant={selected} />
+        <TrendSection trend={selected.trend} />
+      </section>
+    </section>
+  );
+}
+
+function NotesView({
+  selected,
+  notes,
+  onSelectParticipant,
+  onUpdateNote,
+}: {
+  selected: Participant;
+  notes: Record<string, string>;
+  onSelectParticipant: (participant: Participant) => void;
+  onUpdateNote: (value: string) => void;
+}) {
+  const notedParticipants = participants.filter(
+    (participant) => notes[participant.id]?.trim() || participant.flags.length
+  );
+
+  return (
+    <section className="notes-layout">
+      <aside className="notes-index">
+        <h3>Participants to Review</h3>
+        <div className="notes-list">
+          {notedParticipants.map((participant) => (
+            <button
+              key={participant.id}
+              className={participant.id === selected.id ? "selected" : ""}
+              onClick={() => onSelectParticipant(participant)}
+            >
+              <strong>{participant.id}</strong>
+              <span>{participant.flags[0] ?? "Research note"}</span>
+            </button>
+          ))}
+        </div>
+      </aside>
+      <section className="detail-column">
+        <NotesEditor
+          note={notes[selected.id] ?? ""}
+          participant={selected}
+          onUpdateNote={onUpdateNote}
+        />
+        <ParticipantDetail participant={selected} />
+      </section>
+    </section>
+  );
+}
+
+function SettingsView() {
+  return (
+    <section className="settings-grid">
+      <SettingsCard
+        title="Study Window"
+        rows={[
+          ["Active dates", "Oct 1 - Oct 7"],
+          ["Target cohort", "12 participants"],
+          ["Minimum completeness", "5 of 7 days"],
+        ]}
+      />
+      <SettingsCard
+        title="Sync Rules"
+        rows={[
+          ["Recent sync", "Within 24 hours"],
+          ["Stale sync", "24-72 hours"],
+          ["Missing sync", "No sync in 72 hours"],
+        ]}
+      />
+      <SettingsCard
+        title="Flag Thresholds"
+        rows={[
+          ["Recovery review", "Below 60"],
+          ["High stress", "65+"],
+          ["Low sleep", "Under 6 hours"],
+        ]}
+      />
+      <SettingsCard
+        title="Signal Policy"
+        rows={[
+          ["Glucose", "Proxy only"],
+          ["Nitric oxide", "Proxy only"],
+          ["Clinical diagnosis", "Disabled"],
+        ]}
+      />
+    </section>
+  );
+}
+
+function OverviewCards({ stats }: { stats: ReturnType<typeof cohortStats> }) {
+  return (
+    <section className="overview-grid">
+      <OverviewCard label="Participants Enrolled" value={stats.enrolled} />
+      <OverviewCard label="Synced 24h" value={stats.synced} tone="good" />
+      <OverviewCard label="Missing Sync" value={stats.missing} tone="risk" />
+      <OverviewCard label="Active Flags" value={stats.activeFlags} tone="warn" />
+      <OverviewCard label="Avg Recovery" value={`${stats.averageRecovery}/100`} />
+      <OverviewCard label="Avg Sleep" value={`${stats.averageSleep}/100`} />
+    </section>
+  );
+}
+
+function SettingsCard({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<[string, string]>;
+}) {
+  return (
+    <article className="settings-card">
+      <h3>{title}</h3>
+      <div className="settings-rows">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function ParticipantPanel({
+  selected,
+  participants,
+  search,
+  filter,
+  onSearch,
+  onFilter,
+  onSelectParticipant,
+}: {
+  selected: Participant;
+  participants: Participant[];
+  search: string;
+  filter: FilterKey;
+  onSearch: (value: string) => void;
+  onFilter: (value: FilterKey) => void;
+  onSelectParticipant: (participant: Participant) => void;
+}) {
+  return (
+    <aside className="participant-panel">
+      <div className="participant-tools">
+        <input
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+          placeholder="Search ID..."
+        />
+        <div className="filter-row">
+          {filters.map((item) => (
+            <button
+              key={item.key}
+              className={filter === item.key ? "active" : ""}
+              onClick={() => onFilter(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="participant-list">
+        {participants.map((participant) => (
+          <button
+            key={participant.id}
+            className={`participant-row ${selected.id === participant.id ? "selected" : ""}`}
+            onClick={() => onSelectParticipant(participant)}
+          >
+            <div>
+              <strong>{participant.id}</strong>
+              <span>
+                Rec: {participant.recovery || "-"} | Sleep:{" "}
+                {participant.sleepHours ? `${participant.sleepHours}h` : "-"}
+              </span>
+            </div>
+            <div className="participant-meta">
+              <i className={`status-dot ${participant.syncStatus}`} />
+              <small>{participant.lastSync}</small>
+            </div>
+          </button>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function NotesEditor({
+  note,
+  participant,
+  onUpdateNote,
+}: {
+  note: string;
+  participant: Participant;
+  onUpdateNote: (value: string) => void;
+}) {
+  return (
+    <section className="notes-card">
+      <div className="notes-header">
+        <div>
+          <h3>Research Notes</h3>
+          <p>Participant {participant.id}</p>
+        </div>
+        <button>Save Note</button>
+      </div>
+      <textarea
+        value={note}
+        onChange={(event) => onUpdateNote(event.target.value)}
+        placeholder={`Observations for ${participant.id}...`}
+      />
+      <div className="tag-row">
+        <span>Follow up +</span>
+        <span>Sync issue +</span>
+        <span>Interesting pattern +</span>
+        <span>Exclude day +</span>
+      </div>
+    </section>
   );
 }
 
