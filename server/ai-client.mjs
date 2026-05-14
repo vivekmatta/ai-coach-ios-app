@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { callVertexGenerate, getVertexConfig } from "./vertex-client.mjs";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const envPath = path.join(repoRoot, ".env");
@@ -39,19 +41,30 @@ function loadDotEnv() {
   }
 }
 
-export function getAiChatConfig() {
-  if (!geminiApiKey) {
-    throw new Error("Set GEMINI_API_KEY in .env or your shell to enable AI chat.");
+export async function getAiChatConfig() {
+  if (geminiApiKey) {
+    return {
+      provider: "gemini-api-key",
+      model: geminiModel,
+    };
   }
 
+  const vertex = await getVertexConfig();
   return {
-    provider: "gemini-api-key",
-    model: geminiModel,
+    provider: "vertex-service-account",
+    model: vertex.chatModel,
+    projectId: vertex.projectId,
+    location: vertex.location,
+    credentialsPath: vertex.credentialsPath,
   };
 }
 
 export async function callAiChatGenerate({ systemInstruction, userText }) {
-  const { model } = getAiChatConfig();
+  if (!geminiApiKey) {
+    return callVertexGenerate({ systemInstruction, userText });
+  }
+
+  const { model } = await getAiChatConfig();
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const response = await fetch(endpoint, {

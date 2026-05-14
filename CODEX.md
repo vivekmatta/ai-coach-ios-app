@@ -42,7 +42,8 @@ Ignored secret paths and patterns must include:
 Current secret handling:
 - Health dashboard and mock sync endpoints do not require secrets.
 - AI chat uses `GEMINI_API_KEY` from `.env` or the shell when configured.
-- Vertex service account credentials are still only needed for vector DB build/retrieval experiments.
+- If no API key is present, AI chat uses the Google service account JSON at `secrets/google-service-account.json`.
+- Vertex service account credentials also support vector DB build/retrieval experiments.
 - The mobile client never reads credential files directly.
 
 ## How To Run
@@ -127,7 +128,7 @@ Chat remains available through:
 - `POST /coach/chat`
 - `POST /coach/plan`
 
-If `GEMINI_API_KEY` is configured, `/coach/chat` uses:
+If `GEMINI_API_KEY` or `secrets/google-service-account.json` is configured, `/coach/chat` uses:
 - current structured health context
 - optional retrieval context from the vector DB when available
 

@@ -29,10 +29,10 @@ Current local flow:
 - inspect the daily brief and 7-day trend surfaces
 
 Optional AI chat integration:
-- create `.env` from `.env.example`
-- set `GEMINI_API_KEY` in `.env`
+- either put the Google service account file at `secrets/google-service-account.json`
+- or create `.env` from `.env.example` and set `GEMINI_API_KEY`
 - run `npm run server`
-- the `Coach` chat endpoint will use Gemini when configured
+- the `Coach` chat endpoint will use the configured AI provider
 - daily brief and plan endpoints stay deterministic for now
 
 The mobile client does not read credentials directly. The local proxy server reads the secret server-side.

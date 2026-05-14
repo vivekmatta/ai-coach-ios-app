@@ -45,7 +45,7 @@ async function readJsonBody(req) {
 
 async function safeAiStatus() {
   try {
-    const config = getAiChatConfig();
+    const config = await getAiChatConfig();
     return {
       configured: true,
       ...config,
