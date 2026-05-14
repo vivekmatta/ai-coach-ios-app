@@ -13,7 +13,7 @@ import {
   retrieveRelevantChunks,
   vectorDbExists,
 } from "./vector-store.mjs";
-import { callVertexGenerate, getVertexConfig } from "./vertex-client.mjs";
+import { callAiChatGenerate, getAiChatConfig } from "./ai-client.mjs";
 
 const port = Number(process.env.COACH_PROXY_PORT || 8787);
 const host = process.env.COACH_PROXY_HOST || "0.0.0.0";
@@ -43,20 +43,17 @@ async function readJsonBody(req) {
   return raw ? JSON.parse(raw) : {};
 }
 
-async function safeVertexStatus() {
+async function safeAiStatus() {
   try {
-    const { projectId, chatModel, location, credentialsPath } = await getVertexConfig();
+    const config = getAiChatConfig();
     return {
       configured: true,
-      projectId,
-      model: chatModel,
-      location,
-      credentialsPath,
+      ...config,
     };
   } catch (error) {
     return {
       configured: false,
-      error: error instanceof Error ? error.message : "Vertex AI is not configured.",
+      error: error instanceof Error ? error.message : "AI chat is not configured.",
     };
   }
 }
@@ -83,26 +80,32 @@ function buildSystemInstruction(profile, mode) {
   ].join("\n");
 }
 
-function buildPlanPrompt(prompt, profile, daily) {
+function buildLocalPlanResponse(prompt, profile, daily) {
+  const first = firstName(profile);
+
   return [
-    `User request: ${prompt}`,
+    `Plan for ${first}`,
     "",
-    "User profile:",
-    `- Name: ${profile?.name || "Alex"}`,
-    `- Goals: ${profile?.goals || "Improve overall wellness"}`,
-    `- Exercise days/week: ${profile?.exerciseDays || "Not provided"}`,
-    `- Preferred movement: ${profile?.exerciseType || "Not provided"}`,
-    `- Sleep time: ${profile?.sleepTime || "Not provided"}`,
-    `- Caffeine: ${profile?.caffeine || "Not provided"}`,
-    `- Work stress: ${profile?.workStress || "Not provided"}`,
+    "Today",
+    `- Main priority: ${daily?.summary || "Keep the day simple and recovery-aware."}`,
+    `- Movement: ${daily?.workout || "Use easy movement only."}`,
+    `- Hydration: ${daily?.hydration || "Hydrate early and steadily."}`,
     "",
-    "Current daily guidance:",
-    `- Summary: ${daily?.summary || "Recovery is low today."}`,
-    `- Bedtime: ${daily?.bedtime || "10:00 pm target."}`,
-    `- Workout: ${daily?.workout || "Keep movement easy."}`,
-    `- Hydration: ${daily?.hydration || "Hydrate earlier in the day."}`,
-    `- Nutrition: ${daily?.nutrition || "Prefer steady meals and avoid late heavy eating."}`,
+    "This week",
+    "- Protect a consistent sleep window for the next few nights.",
+    "- Keep intensity low until recovery and stress signals stabilize.",
+    "- Use short walks, daylight, and steady meals as the default levers.",
+    "",
+    `Requested focus: ${prompt}`,
   ].join("\n");
+}
+
+async function safeRetrieveRelevantChunks(query) {
+  try {
+    return await retrieveRelevantChunks(query);
+  } catch {
+    return [];
+  }
 }
 
 const server = createServer(async (req, res) => {
@@ -116,13 +119,13 @@ const server = createServer(async (req, res) => {
 
   try {
     if (req.method === "GET" && requestUrl.pathname === "/health") {
-      const vertex = await safeVertexStatus();
+      const aiChat = await safeAiStatus();
       const hasVectorDb = await vectorDbExists();
       const db = hasVectorDb ? await loadVectorDb() : null;
       writeJson(res, 200, {
         ok: true,
-        provider: vertex.configured ? "vertex-ai" : "local-only",
-        vertex,
+        provider: aiChat.configured ? aiChat.provider : "local-only",
+        aiChat,
         vectorDb: hasVectorDb
           ? {
               sourcePath: db.sourcePath,
@@ -164,10 +167,10 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && requestUrl.pathname === "/coach/chat") {
       const body = await readJsonBody(req);
       const message = body.message || "Give me a practical coaching response for today.";
-      const contextChunks = await retrieveRelevantChunks(message);
+      const contextChunks = await safeRetrieveRelevantChunks(message);
       const context = formatRetrievedContext(contextChunks);
       const state = await getHealthState();
-      const text = await callVertexGenerate({
+      const text = await callAiChatGenerate({
         systemInstruction: [
           buildSystemInstruction(body.profile, "chat"),
           `Latest health context:\n${buildHealthPromptContext(state)}`,
@@ -191,26 +194,9 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && requestUrl.pathname === "/coach/plan") {
       const body = await readJsonBody(req);
       const prompt = body.prompt || "Create my weekly plan.";
-      const contextChunks = await retrieveRelevantChunks(prompt);
-      const context = formatRetrievedContext(contextChunks);
-      const state = await getHealthState();
-      const text = await callVertexGenerate({
-        systemInstruction: [
-          buildSystemInstruction(body.profile, "plan"),
-          `Latest health context:\n${buildHealthPromptContext(state)}`,
-          context ? `Relevant research context:\n${context}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
-        userText: buildPlanPrompt(prompt, body.profile, body.daily),
-      });
       writeJson(res, 200, {
-        text,
-        retrieval: contextChunks.map((chunk) => ({
-          id: chunk.id,
-          source: chunk.source,
-          score: chunk.score,
-        })),
+        text: buildLocalPlanResponse(prompt, body.profile, body.daily),
+        retrieval: [],
       });
       return;
     }

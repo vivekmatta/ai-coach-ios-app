@@ -29,9 +29,11 @@ Current local flow:
 - inspect the daily brief and 7-day trend surfaces
 
 Optional AI chat integration:
-- put the Google service account file at `secrets/google-service-account.json`
+- create `.env` from `.env.example`
+- set `GEMINI_API_KEY` in `.env`
 - run `npm run server`
-- retrieval-backed chat and plan endpoints will use Vertex AI when configured
+- the `Coach` chat endpoint will use Gemini when configured
+- daily brief and plan endpoints stay deterministic for now
 
 The mobile client does not read credentials directly. The local proxy server reads the secret server-side.
 
@@ -76,6 +78,7 @@ src/types.ts
 src/services/apiBase.ts
 src/services/coachApi.ts
 src/services/healthApi.ts
+server/ai-client.mjs
 server/coach-engine.mjs
 server/health-data-store.mjs
 server/mock-health-fixtures.mjs

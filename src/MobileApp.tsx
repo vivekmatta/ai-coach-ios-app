@@ -333,9 +333,6 @@ export function MobileApp() {
           onLoadScenario={(fixtureId) => {
             void handleScenarioChange(fixtureId);
           }}
-          onAskCoach={(prompt) => {
-            void handleSendMessage(prompt);
-          }}
         />
       ) : null}
       {tab === "progress" ? (
@@ -365,6 +362,7 @@ export function MobileApp() {
       ) : null}
       {tab === "you" ? <ProfileScreen profile={profile} latestHealth={latestHealth} /> : null}
 
+      {tab !== "coach" ? <FloatingCoachButton onPress={() => setTab("coach")} /> : null}
       <BottomTabs activeTab={tab} onChange={setTab} />
     </KeyboardAvoidingView>
   );
@@ -417,7 +415,6 @@ function TodayScreen({
   scenarioLoading,
   onRetry,
   onLoadScenario,
-  onAskCoach,
 }: {
   health: LatestHealthResponse | null;
   healthLoading: boolean;
@@ -425,7 +422,6 @@ function TodayScreen({
   scenarioLoading: boolean;
   onRetry: () => void;
   onLoadScenario: (fixtureId: string) => void;
-  onAskCoach: (prompt: string) => void;
 }) {
   if (healthLoading && !health) {
     return (
@@ -526,13 +522,21 @@ function TodayScreen({
         {scenarioLoading ? <Text style={styles.footnote}>Switching scenarios...</Text> : null}
       </Card>
 
-      <Pressable
-        style={({ pressed }) => [styles.askCoachButton, pressed && styles.pressed]}
-        onPress={() => onAskCoach("Give me a plan for today based on the latest synced wearable data.")}
-      >
-        <Text style={styles.askCoachText}>Ask Coach</Text>
-      </Pressable>
     </ScrollView>
+  );
+}
+
+function FloatingCoachButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Open AI Coach"
+      style={({ pressed }) => [styles.floatingCoachButton, pressed && styles.pressed]}
+      onPress={onPress}
+    >
+      <Text style={styles.floatingCoachBadge}>AI</Text>
+      <Text style={styles.floatingCoachText}>Coach</Text>
+    </Pressable>
   );
 }
 
@@ -1362,15 +1366,35 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: spacing.sm,
   },
-  askCoachButton: {
+  floatingCoachButton: {
+    position: "absolute",
+    right: spacing.lg,
+    bottom: 104,
+    zIndex: 20,
     alignItems: "center",
-    alignSelf: "flex-end",
     backgroundColor: palette.sage,
     borderRadius: radius.pill,
-    paddingHorizontal: 22,
-    paddingVertical: 15,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    shadowColor: palette.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
-  askCoachText: {
+  floatingCoachBadge: {
+    backgroundColor: palette.surface,
+    borderRadius: radius.pill,
+    color: palette.sage,
+    fontSize: 11,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+  },
+  floatingCoachText: {
     color: palette.surface,
     fontSize: 14,
     fontWeight: "800",
