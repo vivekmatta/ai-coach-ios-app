@@ -47,11 +47,21 @@ npm install
 npm run dev
 ```
 
+Open the local Vite URL, usually `http://localhost:5173/`.
+
 Production check:
 
 ```bash
 npm run build
 ```
+
+Dashboard tabs:
+- `Overview` for cohort cards, participant selection, selected participant details, trends, and notes
+- `Participants` for a focused participant list and detail workflow
+- `Research Notes` for follow-up-oriented note review
+- `Study Settings` for the current mock study thresholds and signal policy
+
+The dashboard uses responsive card grids so overview cards, metrics, trends, notes, and settings wrap instead of overflowing on narrower screens.
 
 ## Product Direction
 
@@ -103,6 +113,7 @@ Web dashboard:
 - selected participant detail view
 - 7-day trend cards
 - research notes
+- study settings
 
 ## Stack
 
@@ -110,7 +121,7 @@ Web dashboard:
 - Expo
 - TypeScript
 - AsyncStorage
-- Node local proxy for structured health data and optional Vertex chat
+- Node local proxy for structured health data and server-side AI chat
 - Vite + React for the standalone research dashboard
 
 ## Design

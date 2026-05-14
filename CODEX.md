@@ -93,6 +93,11 @@ cd research-dashboard
 npm run build
 ```
 
+Dashboard run notes:
+- Vite normally serves the dashboard at `http://localhost:5173/`.
+- The left navigation is state-driven, not anchor-based. The current views are `Overview`, `Participants`, `Research Notes`, and `Study Settings`.
+- The dashboard uses responsive CSS grids and wrapping text to prevent card overflow on narrower screens.
+
 ## What Exists Now
 
 ### Structured mock health data
@@ -141,13 +146,11 @@ If the backend is unreachable, the mobile client still falls back to local canne
 The `research-dashboard/` app is a standalone Vite + React web dashboard with mock participant data. It is intentionally separate from Expo for now and does not call the local Node health endpoints yet.
 
 Current dashboard surfaces:
-- cohort overview cards
-- participant search and filters
-- selected participant details
-- data completeness and sync freshness
-- 7-day trend cards
-- proxy indicators clearly labeled as proxies
-- research notes UI
+- `Overview`: cohort overview cards, participant search/filter list, selected participant detail, 7-day trends, and notes
+- `Participants`: focused participant list and selected participant detail workflow
+- `Research Notes`: participants with notes or flags plus editable note detail
+- `Study Settings`: mock study window, sync rules, flag thresholds, and signal policy
+- responsive card grids and wrapping text to avoid overflow on smaller screens
 
 ## Repo Structure
 
