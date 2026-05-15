@@ -192,6 +192,7 @@ export function buildLocalStructuredPlan(
           why: "Your recovery is low, so this adds circulation and mobility without turning today into a hard session.",
           cues: ["Keep your feet flat.", "Breathe slowly.", "Stop before it feels like a workout."],
           mediaPrompt: "10 second clean loop of a supported bodyweight squat hold in a bright studio.",
+          videoAssetKey: tone,
         }
       : {
           id: "tempo-push-up",
@@ -201,6 +202,7 @@ export function buildLocalStructuredPlan(
           why: "Your signals support controlled strength work, and this gives you useful stimulus without a full circuit.",
           cues: ["Lower for three seconds.", "Keep ribs tucked.", "Leave two reps in reserve."],
           mediaPrompt: "10 second clean loop of a slow tempo push-up in a minimalist gym.",
+          videoAssetKey: tone,
         },
     trendInsights: [
       {

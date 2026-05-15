@@ -225,7 +225,7 @@ async function buildAiStructuredPlan({ state, profile, tone, personalityStrength
     personalityPrompt(tone, personalityStrength),
     `Latest health context:\n${buildHealthPromptContext(state)}`,
     "Return only valid JSON. No Markdown fences. Do not include explanatory text outside JSON.",
-    "Use this exact schema: headline string, summary string, status string, overallScore number, categoryScores array of {id,label,score,status,explanation}, cards array of the top 3 category score objects, tasks array of {id,title,detail,category}, alerts array of {id,title,detail,subtle}, workoutOfTheDay {id,title,label,duration,why,cues,mediaPrompt}, trendInsights array of {id,title,status,explanation,values}, correlations array of {id,title,explanation}, coachTone string, personalityStrength number.",
+    "Use this exact schema: headline string, summary string, status string, overallScore number, categoryScores array of {id,label,score,status,explanation}, cards array of the top 3 category score objects, tasks array of {id,title,detail,category}, alerts array of {id,title,detail,subtle}, workoutOfTheDay {id,title,label,duration,why,cues,mediaPrompt,videoAssetKey}, trendInsights array of {id,title,status,explanation,values}, correlations array of {id,title,explanation}, coachTone string, personalityStrength number.",
     `Allowed coachTone values: gentle, direct, hype, nice, unhinged. Requested tone: ${tone}.`,
     "For v1, choose exactly one workout exercise. Use cached/demo media language in mediaPrompt, not live generation instructions to the mobile app.",
   ].join("\n\n");

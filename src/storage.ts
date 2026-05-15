@@ -1,13 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { defaultProfile } from "./data";
-import { CoachToneMode, DiaryEntry, UserProfile } from "./types";
+import { CoachPlanResponse, CoachToneMode, DiaryEntry, UserProfile } from "./types";
 
 const PROFILE_KEY = "ai_coach_profile";
 const ONBOARDING_KEY = "ai_coach_onboarding_complete";
 const DIARY_KEY = "ai_coach_diary_entries";
 const COACH_TONE_KEY = "ai_coach_tone";
 const PERSONALITY_STRENGTH_KEY = "ai_coach_personality_strength";
+const COACH_PLAN_CACHE_KEY = "ai_coach_plan_cache";
+const NOTIFICATIONS_ENABLED_KEY = "ai_coach_notifications_enabled";
+const NOTIFICATION_IDS_KEY = "ai_coach_notification_ids";
 
 export async function loadProfile(): Promise<UserProfile> {
   const raw = await AsyncStorage.getItem(PROFILE_KEY);
@@ -79,4 +82,69 @@ export async function savePersonalityStrength(strength: number): Promise<void> {
     PERSONALITY_STRENGTH_KEY,
     String(Math.max(1, Math.min(5, Math.round(strength))))
   );
+}
+
+type CachedPlanRecord = {
+  key: string;
+  plan: CoachPlanResponse;
+  cachedAt: string;
+};
+
+async function loadPlanCache(): Promise<CachedPlanRecord[]> {
+  const raw = await AsyncStorage.getItem(COACH_PLAN_CACHE_KEY);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const records = JSON.parse(raw) as CachedPlanRecord[];
+    return Array.isArray(records) ? records : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function loadCachedCoachPlan(key: string): Promise<CoachPlanResponse | null> {
+  const records = await loadPlanCache();
+  return records.find((record) => record.key === key)?.plan ?? null;
+}
+
+export async function saveCachedCoachPlan(key: string, plan: CoachPlanResponse): Promise<void> {
+  const records = await loadPlanCache();
+  const nextRecords = [
+    {
+      key,
+      plan,
+      cachedAt: new Date().toISOString(),
+    },
+    ...records.filter((record) => record.key !== key),
+  ].slice(0, 30);
+
+  await AsyncStorage.setItem(COACH_PLAN_CACHE_KEY, JSON.stringify(nextRecords));
+}
+
+export async function loadNotificationsEnabled(): Promise<boolean> {
+  return (await AsyncStorage.getItem(NOTIFICATIONS_ENABLED_KEY)) === "true";
+}
+
+export async function saveNotificationsEnabled(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(NOTIFICATIONS_ENABLED_KEY, String(enabled));
+}
+
+export async function loadScheduledNotificationIds(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(NOTIFICATION_IDS_KEY);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const ids = JSON.parse(raw) as string[];
+    return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveScheduledNotificationIds(ids: string[]): Promise<void> {
+  await AsyncStorage.setItem(NOTIFICATION_IDS_KEY, JSON.stringify(ids));
 }

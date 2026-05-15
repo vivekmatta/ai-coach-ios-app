@@ -345,6 +345,7 @@ function buildWorkoutOfTheDay(day, profile = {}) {
       ],
       mediaPrompt:
         "10 second clean loop of a trainer demonstrating a supported bodyweight squat hold in a bright minimalist studio, calm premium wellness style.",
+      videoAssetKey: "gentle",
     };
   }
 
@@ -363,6 +364,7 @@ function buildWorkoutOfTheDay(day, profile = {}) {
       ],
       mediaPrompt:
         "10 second clean loop of a trainer demonstrating a slow tempo push-up on a mat in a bright minimalist gym, premium health app style.",
+      videoAssetKey: "direct",
     };
   }
 
@@ -379,6 +381,7 @@ function buildWorkoutOfTheDay(day, profile = {}) {
     ],
     mediaPrompt:
       "10 second clean loop of a runner doing relaxed track pickups on a soft morning, premium calm fitness app style.",
+    videoAssetKey: "hype",
   };
 }
 

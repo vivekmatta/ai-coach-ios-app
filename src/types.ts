@@ -62,6 +62,7 @@ export interface CoachWorkout {
   why: string;
   cues: string[];
   mediaPrompt: string;
+  videoAssetKey?: string;
 }
 
 export interface CoachTrendInsight {
@@ -99,6 +100,10 @@ export interface DiaryEntry {
   text: string;
   tags: string[];
   createdAt: string;
+  voiceNote?: {
+    uri: string;
+    durationSeconds: number;
+  };
 }
 
 export interface MetricAction {

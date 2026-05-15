@@ -10,6 +10,15 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { MaterialIcons } from "@expo/vector-icons";
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from "expo-audio";
+import * as Notifications from "expo-notifications";
+import { VideoView, useVideoPlayer } from "expo-video";
 
 import { AppTextInput, Card, PrimaryButton } from "./components";
 import { defaultProfile, onboardingQuestions } from "./data";
@@ -25,15 +34,21 @@ import {
 } from "./services/healthApi";
 import {
   loadCoachTone,
+  loadCachedCoachPlan,
   loadDiaryEntries,
+  loadNotificationsEnabled,
   loadOnboardingComplete,
   loadPersonalityStrength,
   loadProfile,
+  loadScheduledNotificationIds,
+  saveCachedCoachPlan,
   saveCoachTone,
   saveDiaryEntries,
+  saveNotificationsEnabled,
   saveOnboardingComplete,
   savePersonalityStrength,
   saveProfile,
+  saveScheduledNotificationIds,
 } from "./storage";
 import { palette, radius, spacing } from "./theme";
 import {
@@ -69,10 +84,10 @@ const tabLabels: Record<TabKey, string> = {
 };
 
 const tabGlyphs: Record<TabKey, string> = {
-  today: "T",
-  insights: "I",
-  workouts: "W",
-  profile: "P",
+  today: "calendar-today",
+  insights: "analytics",
+  workouts: "fitness-center",
+  profile: "person",
 };
 
 const toneLabels: Array<{ value: CoachToneMode; label: string; short: string }> = [
@@ -82,6 +97,14 @@ const toneLabels: Array<{ value: CoachToneMode; label: string; short: string }> 
   { value: "nice", label: "Nice", short: "N" },
   { value: "unhinged", label: "Unhinged", short: "U" },
 ];
+
+const workoutVideoSources: Record<CoachToneMode, number> = {
+  gentle: require("../assets/videos/gentle-recovery.mp4"),
+  direct: require("../assets/videos/direct-strength.mp4"),
+  hype: require("../assets/videos/hype-interval.mp4"),
+  nice: require("../assets/videos/nice-mobility.mp4"),
+  unhinged: require("../assets/videos/unhinged-circuit.mp4"),
+};
 
 const diaryTags = ["Ran", "Lifted", "Ate late", "Caffeine", "Stress"];
 
@@ -102,6 +125,15 @@ const workoutLibrary = [
     icon: "air",
   },
 ];
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
 
 function formatShortDate(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
@@ -127,6 +159,76 @@ function firstNameFrom(profile: UserProfile) {
   return profile.name.trim().split(" ")[0] || "there";
 }
 
+function stableHash(value: unknown) {
+  const text = JSON.stringify(value);
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash << 5) - hash + text.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function buildCoachPlanCacheKey(
+  health: LatestHealthResponse,
+  profile: UserProfile,
+  tone: CoachToneMode,
+  strength: number,
+  entries: DiaryEntry[]
+) {
+  return [
+    health.scenarioId,
+    health.latestDay.date,
+    stableHash(profile),
+    stableHash(entries.map((entry) => ({ text: entry.text, tags: entry.tags, voiceNote: Boolean(entry.voiceNote) }))),
+    tone,
+    strength,
+  ].join(":");
+}
+
+function notificationAllowed(settings: Notifications.NotificationPermissionsStatus) {
+  return settings.granted || settings.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+}
+
+async function cancelCoachNotifications() {
+  const ids = await loadScheduledNotificationIds();
+  await Promise.all(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined)));
+  await saveScheduledNotificationIds([]);
+}
+
+async function scheduleCoachNotifications(plan: CoachPlanResponse) {
+  await cancelCoachNotifications();
+  const summaryId = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Today's coach plan",
+      body: plan.summary,
+      data: { tab: "today" },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: 8,
+      minute: 30,
+    },
+  });
+  const nudge = plan.alerts[0];
+  const nudgeId = nudge
+    ? await Notifications.scheduleNotificationAsync({
+        content: {
+          title: nudge.title,
+          body: nudge.detail,
+          data: { tab: "today", alertId: nudge.id },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: 60 * 60 * 3,
+          repeats: true,
+        },
+      })
+    : null;
+
+  await saveScheduledNotificationIds([summaryId, nudgeId].filter(Boolean) as string[]);
+}
+
 function toneColor(score: number) {
   if (score >= 75) {
     return palette.sage;
@@ -140,17 +242,17 @@ function toneColor(score: number) {
 function taskIcon(category: CoachTask["category"]) {
   switch (category) {
     case "hydration":
-      return "H";
+      return "water-drop";
     case "breath":
-      return "B";
+      return "air";
     case "sleep":
-      return "S";
+      return "bedtime";
     case "nutrition":
-      return "N";
+      return "restaurant";
     case "recovery":
-      return "R";
+      return "battery-charging-full";
     default:
-      return "M";
+      return "directions-walk";
   }
 }
 
@@ -177,7 +279,12 @@ export function MobileApp() {
   const [diaryDraft, setDiaryDraft] = useState("");
   const [selectedDiaryTags, setSelectedDiaryTags] = useState<string[]>([]);
   const [checkedTasks, setCheckedTasks] = useState<Record<string, boolean>>({});
-  const [voiceNoteState, setVoiceNoteState] = useState<"idle" | "captured">("idle");
+  const [voiceNoteState, setVoiceNoteState] = useState<"idle" | "recording" | "captured">("idle");
+  const [pendingVoiceNote, setPendingVoiceNote] = useState<DiaryEntry["voiceNote"] | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationStatus, setNotificationStatus] = useState("Off");
+  const audioRecorder = useAudioRecorder(RecordingPresets.LOW_QUALITY);
+  const audioRecorderState = useAudioRecorderState(audioRecorder);
 
   const firstName = useMemo(() => firstNameFrom(profile), [profile]);
 
@@ -188,8 +295,22 @@ export function MobileApp() {
     strength = personalityStrength,
     entries = diaryEntries
   ) {
+    if (health) {
+      const cacheKey = buildCoachPlanCacheKey(health, nextProfile, tone, strength, entries);
+      const cachedPlan = await loadCachedCoachPlan(cacheKey);
+      if (cachedPlan) {
+        setCoachPlan(cachedPlan);
+        return cachedPlan;
+      }
+      const plan = await generateStructuredPlan(health, nextProfile, tone, strength, entries);
+      setCoachPlan(plan);
+      await saveCachedCoachPlan(cacheKey, plan);
+      return plan;
+    }
+
     const plan = await generateStructuredPlan(health, nextProfile, tone, strength, entries);
     setCoachPlan(plan);
+    return plan;
   }
 
   async function loadHealthData(
@@ -234,12 +355,13 @@ export function MobileApp() {
 
   useEffect(() => {
     async function bootstrap() {
-      const [storedProfile, done, storedTone, storedStrength, storedDiary] = await Promise.all([
+      const [storedProfile, done, storedTone, storedStrength, storedDiary, storedNotifications] = await Promise.all([
         loadProfile(),
         loadOnboardingComplete(),
         loadCoachTone(),
         loadPersonalityStrength(),
         loadDiaryEntries(),
+        loadNotificationsEnabled(),
       ]);
 
       setProfile(storedProfile);
@@ -247,12 +369,24 @@ export function MobileApp() {
       setCoachTone(storedTone);
       setPersonalityStrength(storedStrength);
       setDiaryEntries(storedDiary);
+      setNotificationsEnabled(storedNotifications);
+      setNotificationStatus(storedNotifications ? "Scheduled" : "Off");
       setLoading(false);
       await loadHealthData(storedProfile, storedTone, storedStrength, storedDiary);
     }
 
     void bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (!coachPlan || !notificationsEnabled) {
+      return;
+    }
+
+    scheduleCoachNotifications(coachPlan)
+      .then(() => setNotificationStatus("Scheduled"))
+      .catch(() => setNotificationStatus("Permission needed"));
+  }, [coachPlan, notificationsEnabled]);
 
   useEffect(() => {
     if (!onboardingDone) {
@@ -350,16 +484,17 @@ export function MobileApp() {
   async function addDiaryEntry(textOverride?: string, tagsOverride?: string[]) {
     const text = (textOverride ?? diaryDraft).trim();
     const tags = tagsOverride ?? selectedDiaryTags;
-    if (!text && !tags.length) {
+    if (!text && !tags.length && !pendingVoiceNote) {
       return;
     }
 
     const nextEntries = [
       {
         id: `diary-${Date.now()}`,
-        text: text || tags.join(", "),
+        text: text || tags.join(", ") || `Voice note attached (${pendingVoiceNote?.durationSeconds ?? 0}s)`,
         tags,
         createdAt: new Date().toISOString(),
+        voiceNote: pendingVoiceNote ?? undefined,
       },
       ...diaryEntries,
     ].slice(0, 20);
@@ -367,6 +502,7 @@ export function MobileApp() {
     setDiaryDraft("");
     setSelectedDiaryTags([]);
     setVoiceNoteState("idle");
+    setPendingVoiceNote(null);
     await saveDiaryEntries(nextEntries);
     await refreshStructuredPlan(latestHealth, profile, coachTone, personalityStrength, nextEntries);
   }
@@ -381,9 +517,51 @@ export function MobileApp() {
     setCheckedTasks((current) => ({ ...current, [taskId]: !current[taskId] }));
   }
 
-  function captureVoiceNote() {
-    setVoiceNoteState("captured");
-    setDiaryDraft((current) => current || "Voice note captured for coach context.");
+  async function captureVoiceNote() {
+    if (voiceNoteState === "recording") {
+      await audioRecorder.stop();
+      const durationSeconds = Math.max(1, Math.round(audioRecorderState.durationMillis / 1000));
+      setPendingVoiceNote(audioRecorder.uri ? { uri: audioRecorder.uri, durationSeconds } : null);
+      setVoiceNoteState("captured");
+      setDiaryDraft((current) => current || `Voice note attached (${durationSeconds}s) for coach context.`);
+      return;
+    }
+
+    const permission = await requestRecordingPermissionsAsync();
+    if (!permission.granted) {
+      setDiaryDraft((current) => current || "Microphone permission is needed to attach a voice note.");
+      return;
+    }
+
+    await audioRecorder.prepareToRecordAsync();
+    audioRecorder.record();
+    setPendingVoiceNote(null);
+    setVoiceNoteState("recording");
+  }
+
+  async function handleNotificationToggle() {
+    if (notificationsEnabled) {
+      setNotificationsEnabled(false);
+      setNotificationStatus("Off");
+      await saveNotificationsEnabled(false);
+      await cancelCoachNotifications();
+      return;
+    }
+
+    const currentSettings = await Notifications.getPermissionsAsync();
+    const settings = notificationAllowed(currentSettings)
+      ? currentSettings
+      : await Notifications.requestPermissionsAsync();
+
+    if (!notificationAllowed(settings)) {
+      setNotificationStatus("Permission needed");
+      return;
+    }
+
+    setNotificationsEnabled(true);
+    setNotificationStatus("Scheduled");
+    await saveNotificationsEnabled(true);
+    await scheduleCoachNotifications(plan);
   }
 
   const plan = coachPlan ?? buildLocalStructuredPlan(latestHealth, profile, coachTone, personalityStrength, diaryEntries);
@@ -470,8 +648,6 @@ export function MobileApp() {
               healthLoading={healthLoading}
               healthError={healthError}
               scenarioLoading={scenarioLoading}
-              coachTone={coachTone}
-              personalityStrength={personalityStrength}
               checkedTasks={checkedTasks}
               selectedDiaryTags={selectedDiaryTags}
               diaryDraft={diaryDraft}
@@ -479,15 +655,11 @@ export function MobileApp() {
               onDiaryDraftChange={setDiaryDraft}
               onToggleDiaryTag={toggleDiaryTag}
               onToggleTask={toggleTask}
-              onCaptureVoiceNote={captureVoiceNote}
+              onCaptureVoiceNote={() => {
+                void captureVoiceNote();
+              }}
               onAddDiary={() => {
                 void addDiaryEntry();
-              }}
-              onToneChange={(tone) => {
-                void handleToneChange(tone);
-              }}
-              onStrengthChange={(strength) => {
-                void handleStrengthChange(strength);
               }}
               onRetry={() => {
                 void loadHealthData(profile, coachTone, personalityStrength, diaryEntries);
@@ -504,9 +676,6 @@ export function MobileApp() {
             <WorkoutsScreen
               plan={plan}
               coachTone={coachTone}
-              personalityStrength={personalityStrength}
-              onToneChange={(tone) => void handleToneChange(tone)}
-              onStrengthChange={(strength) => void handleStrengthChange(strength)}
             />
           ) : null}
           {tab === "profile" ? (
@@ -516,11 +685,16 @@ export function MobileApp() {
               coachTone={coachTone}
               personalityStrength={personalityStrength}
               latestHealth={latestHealth}
+              notificationsEnabled={notificationsEnabled}
+              notificationStatus={notificationStatus}
               onToneChange={(tone) => {
                 void handleToneChange(tone);
               }}
               onStrengthChange={(strength) => {
                 void handleStrengthChange(strength);
+              }}
+              onToggleNotifications={() => {
+                void handleNotificationToggle();
               }}
             />
           ) : null}
@@ -558,7 +732,7 @@ function AppHeader({
         </View>
       </View>
       <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} onPress={onChat}>
-        <Text style={styles.iconButtonText}>chat</Text>
+        <MaterialIcons name="forum" size={22} color={palette.textMuted} />
       </Pressable>
     </View>
   );
@@ -593,8 +767,6 @@ function TodayScreen({
   healthLoading,
   healthError,
   scenarioLoading,
-  coachTone,
-  personalityStrength,
   checkedTasks,
   selectedDiaryTags,
   diaryDraft,
@@ -604,8 +776,6 @@ function TodayScreen({
   onToggleTask,
   onCaptureVoiceNote,
   onAddDiary,
-  onToneChange,
-  onStrengthChange,
   onRetry,
   onLoadScenario,
 }: {
@@ -614,22 +784,20 @@ function TodayScreen({
   healthLoading: boolean;
   healthError: string | null;
   scenarioLoading: boolean;
-  coachTone: CoachToneMode;
-  personalityStrength: number;
   checkedTasks: Record<string, boolean>;
   selectedDiaryTags: string[];
   diaryDraft: string;
-  voiceNoteState: "idle" | "captured";
+  voiceNoteState: "idle" | "recording" | "captured";
   onDiaryDraftChange: (value: string) => void;
   onToggleDiaryTag: (tag: string) => void;
   onToggleTask: (taskId: string) => void;
   onCaptureVoiceNote: () => void;
   onAddDiary: () => void;
-  onToneChange: (tone: CoachToneMode) => void;
-  onStrengthChange: (strength: number) => void;
   onRetry: () => void;
   onLoadScenario: (fixtureId: string) => void;
 }) {
+  const [rawOpen, setRawOpen] = useState(false);
+
   if (healthLoading && !health) {
     return (
       <EmptyState
@@ -686,36 +854,26 @@ function TodayScreen({
         ))}
       </Card>
 
-      <SectionHeading title="Coach nudges" />
-      <Card style={styles.nudgeCard}>
-        <Text style={styles.cardBody}>
-          Your coach is active but subtle today. It will nudge hydration, breathing, movement, and
-          wind-down only when the plan needs help.
-        </Text>
-        {plan.alerts.slice(0, 3).map((alert) => (
-          <View key={alert.id} style={styles.nudgeRow}>
-            <View style={styles.statusDot} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.actionTitle}>{alert.title}</Text>
-              <Text style={styles.actionText}>{alert.detail}</Text>
-            </View>
-          </View>
-        ))}
-      </Card>
-
       <SectionHeading title="Workout today" />
       <WorkoutHero plan={plan} />
 
-      <Card>
-        <Text style={styles.cardTitle}>Why this plan?</Text>
-        <Text style={styles.cardBody}>Raw numbers are here when you want them, but the coach uses them to decide what to do next.</Text>
-        <View style={styles.rawGrid}>
-          <MiniStat label="RHR" value={`${health.latestDay.restingHeartRate} bpm`} />
-          <MiniStat label="HRV" value={`${health.latestDay.hrv} ms`} />
-          <MiniStat label="Sleep" value={formatSleep(health.latestDay.sleepDurationMinutes)} />
-          <MiniStat label="Steps" value={health.latestDay.steps.toLocaleString()} />
-          <MiniStat label="Stress" value={health.latestDay.stressLabel} />
-        </View>
+      <Card style={styles.detailsCard}>
+        <Pressable style={styles.detailsSummary} onPress={() => setRawOpen((open) => !open)}>
+          <Text style={styles.cardTitle}>Why this plan?</Text>
+          <MaterialIcons name={rawOpen ? "expand-less" : "expand-more"} size={26} color={palette.textFaint} />
+        </Pressable>
+        {rawOpen ? (
+          <>
+            <Text style={styles.cardBody}>Raw numbers are here when you want them, but the coach uses them to decide what to do next.</Text>
+            <View style={styles.rawGrid}>
+              <MiniStat label="RHR" value={`${health.latestDay.restingHeartRate} bpm`} />
+              <MiniStat label="HRV" value={`${health.latestDay.hrv} ms`} />
+              <MiniStat label="Sleep" value={formatSleep(health.latestDay.sleepDurationMinutes)} />
+              <MiniStat label="Steps" value={health.latestDay.steps.toLocaleString()} />
+              <MiniStat label="Stress" value={health.latestDay.stressLabel} />
+            </View>
+          </>
+        ) : null}
       </Card>
 
       <Card style={styles.diaryCard}>
@@ -737,7 +895,7 @@ function TodayScreen({
             onPress={onCaptureVoiceNote}
           >
             <Text style={[styles.micButtonText, voiceNoteState === "captured" && styles.micButtonTextActive]}>
-              {voiceNoteState === "captured" ? "ok" : "mic"}
+              {voiceNoteState === "recording" ? "Stop" : voiceNoteState === "captured" ? "Saved" : "Voice note"}
             </Text>
           </Pressable>
         </View>
@@ -761,50 +919,15 @@ function TodayScreen({
           <Pressable
             style={({ pressed }) => [
               styles.saveContextButton,
-              !diaryDraft.trim() && !selectedDiaryTags.length && styles.disabledButton,
+              !diaryDraft.trim() && !selectedDiaryTags.length && voiceNoteState !== "captured" && styles.disabledButton,
               pressed && styles.pressed,
             ]}
-            disabled={!diaryDraft.trim() && !selectedDiaryTags.length}
+            disabled={!diaryDraft.trim() && !selectedDiaryTags.length && voiceNoteState !== "captured"}
             onPress={onAddDiary}
           >
             <Text style={styles.saveContextText}>Save context</Text>
           </Pressable>
         </View>
-      </Card>
-
-      <ToneSelector
-        value={coachTone}
-        strength={personalityStrength}
-        compact
-        onChange={onToneChange}
-        onStrengthChange={onStrengthChange}
-      />
-
-      <Card>
-        <Text style={styles.cardTitle}>Mock sync inputs</Text>
-        <Text style={styles.cardBody}>Use these scenarios until the watch SDK is wired in.</Text>
-        <View style={styles.scenarioWrap}>
-          {health.availableFixtures.map((fixture) => {
-            const active = fixture.id === health.scenarioId;
-            return (
-              <Pressable
-                key={fixture.id}
-                onPress={() => onLoadScenario(fixture.id)}
-                style={({ pressed }) => [
-                  styles.scenarioChip,
-                  active && styles.scenarioChipActive,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={[styles.scenarioTitle, active && styles.scenarioTitleActive]}>
-                  {fixture.label}
-                </Text>
-                <Text style={styles.scenarioBody}>{fixture.summary}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        {scenarioLoading ? <Text style={styles.footnote}>Switching scenarios...</Text> : null}
       </Card>
     </ScrollView>
   );
@@ -841,9 +964,11 @@ function ActionRow({
       style={({ pressed }) => [styles.actionRow, checked && styles.actionRowChecked, pressed && styles.pressed]}
     >
       <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-        <Text style={[styles.checkboxText, checked && styles.checkboxTextChecked]}>
-          {checked ? "✓" : taskIcon(task.category)}
-        </Text>
+        <MaterialIcons
+          name={(checked ? "check" : taskIcon(task.category)) as keyof typeof MaterialIcons.glyphMap}
+          size={checked ? 18 : 15}
+          color={checked ? palette.surface : palette.textMuted}
+        />
       </View>
       <View style={styles.actionCopy}>
         <Text style={[styles.actionTitle, checked && styles.checkedText]}>{task.title}</Text>
@@ -855,13 +980,40 @@ function ActionRow({
 
 function WorkoutHero({ plan }: { plan: CoachPlanResponse }) {
   const workout = plan.workoutOfTheDay;
+  const videoKey = workout.videoAssetKey && workout.videoAssetKey in workoutVideoSources
+    ? (workout.videoAssetKey as CoachToneMode)
+    : plan.coachTone;
+  const player = useVideoPlayer(workoutVideoSources[videoKey], (videoPlayer) => {
+    videoPlayer.loop = true;
+    videoPlayer.muted = true;
+  });
+  const [playing, setPlaying] = useState(false);
+
+  function togglePlayback() {
+    if (playing) {
+      player.pause();
+      setPlaying(false);
+      return;
+    }
+    player.play();
+    setPlaying(true);
+  }
+
   return (
     <Card style={styles.workoutCard}>
       <View style={styles.workoutVisual}>
-        <View style={styles.playButton}>
-          <Text style={styles.playButtonText}>play</Text>
-        </View>
-        <Text style={styles.workoutVisualText}>cached demo loop</Text>
+        <VideoView
+          player={player}
+          nativeControls={false}
+          contentFit="cover"
+          style={styles.workoutVideo}
+        />
+        <Pressable style={styles.videoOverlay} onPress={togglePlayback}>
+          <View style={styles.playButton}>
+            <MaterialIcons name={playing ? "pause" : "play-arrow"} size={28} color={palette.sage} />
+          </View>
+        </Pressable>
+        <Text style={styles.workoutVisualText}>AI demo loop - {toneLabels.find((tone) => tone.value === videoKey)?.label}</Text>
       </View>
       <View style={styles.workoutCopy}>
         <View style={styles.rowBetween}>
@@ -970,30 +1122,19 @@ function CorrelationCard({ correlation }: { correlation: CoachCorrelation }) {
 function WorkoutsScreen({
   plan,
   coachTone,
-  personalityStrength,
-  onToneChange,
-  onStrengthChange,
 }: {
   plan: CoachPlanResponse;
   coachTone: CoachToneMode;
-  personalityStrength: number;
-  onToneChange: (tone: CoachToneMode) => void;
-  onStrengthChange: (strength: number) => void;
 }) {
   return (
     <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
-      <ToneSelector
-        value={coachTone}
-        strength={personalityStrength}
-        onChange={onToneChange}
-        onStrengthChange={onStrengthChange}
-      />
       <SectionHeading title="Recommended for you" />
       <WorkoutHero plan={plan} />
 
       <Card style={styles.coachTake}>
         <Text style={styles.label}>AI media prompt</Text>
         <Text style={styles.cardBody}>{plan.workoutOfTheDay.mediaPrompt}</Text>
+        <Text style={styles.footnote}>Video vibe: {toneLabels.find((tone) => tone.value === coachTone)?.label}</Text>
       </Card>
 
       <SectionHeading title="Library" />
@@ -1021,16 +1162,22 @@ function ProfileScreen({
   coachTone,
   personalityStrength,
   latestHealth,
+  notificationsEnabled,
+  notificationStatus,
   onToneChange,
   onStrengthChange,
+  onToggleNotifications,
 }: {
   profile: UserProfile;
   plan: CoachPlanResponse;
   coachTone: CoachToneMode;
   personalityStrength: number;
   latestHealth: LatestHealthResponse | null;
+  notificationsEnabled: boolean;
+  notificationStatus: string;
   onToneChange: (tone: CoachToneMode) => void;
   onStrengthChange: (strength: number) => void;
+  onToggleNotifications: () => void;
 }) {
   return (
     <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
@@ -1053,15 +1200,15 @@ function ProfileScreen({
           onStrengthChange={onStrengthChange}
         />
         <Text style={styles.personalityPreview}>{personalityPreview(coachTone, personalityStrength)}</Text>
-        <View style={styles.settingRow}>
+        <Pressable style={styles.settingRow} onPress={onToggleNotifications}>
           <View>
             <Text style={styles.actionTitle}>Notifications</Text>
-            <Text style={styles.footnote}>Daily summary and subtle nudges</Text>
+            <Text style={styles.footnote}>Daily summary and subtle nudges - {notificationStatus}</Text>
           </View>
-          <View style={styles.toggleOn}>
-            <View style={styles.toggleKnob} />
+          <View style={[styles.toggleOn, !notificationsEnabled && styles.toggleOff]}>
+            <View style={[styles.toggleKnob, !notificationsEnabled && styles.toggleKnobOff]} />
           </View>
-        </View>
+        </Pressable>
       </Card>
 
       <Card>
@@ -1307,7 +1454,12 @@ function BottomTabs({
               pressed && styles.pressed,
             ]}
           >
-            <Text style={[styles.tabGlyph, active && styles.tabGlyphActive]}>{tabGlyphs[key]}</Text>
+            <MaterialIcons
+              name={tabGlyphs[key] as keyof typeof MaterialIcons.glyphMap}
+              size={22}
+              color={active ? palette.sageSoftText : palette.textMuted}
+              style={styles.tabIcon}
+            />
             <Text style={[styles.tabText, active && styles.tabTextActive]}>{tabLabels[key]}</Text>
           </Pressable>
         );
@@ -1618,13 +1770,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.surfaceHigh,
+    position: "relative",
+  },
+  workoutVideo: {
+    width: "100%",
+    height: "100%",
+  },
+  videoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.16)",
   },
   workoutVisualText: {
+    position: "absolute",
+    left: spacing.md,
+    top: spacing.md,
     color: palette.textMuted,
     fontSize: 12,
     fontWeight: "800",
-    marginTop: spacing.sm,
     textTransform: "uppercase",
+    backgroundColor: "rgba(255, 255, 255, 0.82)",
+    borderRadius: radius.md,
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   playButton: {
     width: 58,
@@ -1668,6 +1838,14 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
     marginTop: spacing.md,
+  },
+  detailsCard: {
+    gap: spacing.md,
+  },
+  detailsSummary: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   miniStat: {
     flexBasis: "48%",
@@ -1734,12 +1912,13 @@ const styles = StyleSheet.create({
   micButton: {
     alignItems: "center",
     justifyContent: "center",
-    width: 42,
+    minWidth: 42,
     height: 42,
     borderRadius: radius.pill,
     backgroundColor: palette.surfaceMuted,
     borderWidth: 1,
     borderColor: palette.line,
+    paddingHorizontal: 12,
   },
   micButtonActive: {
     backgroundColor: palette.sageSoft,
@@ -1996,11 +2175,18 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     paddingHorizontal: 4,
   },
+  toggleOff: {
+    backgroundColor: palette.surfaceHigh,
+    alignItems: "flex-start",
+  },
   toggleKnob: {
     width: 18,
     height: 18,
     borderRadius: radius.pill,
     backgroundColor: palette.surface,
+  },
+  toggleKnobOff: {
+    backgroundColor: palette.textFaint,
   },
   deviceRow: {
     alignItems: "center",
@@ -2156,6 +2342,9 @@ const styles = StyleSheet.create({
   },
   tabItemActive: {
     backgroundColor: palette.sageSoft,
+  },
+  tabIcon: {
+    marginBottom: 2,
   },
   tabGlyph: {
     color: palette.textMuted,

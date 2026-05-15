@@ -72,6 +72,9 @@ Current mobile run notes:
 - `@expo/ngrok` is installed locally so tunnel mode does not prompt during startup.
 - If Expo Go shows `Could not connect to development server` for `http://10.x.x.x:8081`, first confirm `npm run start:mobile` is still running. If campus Wi-Fi blocks LAN traffic, stop Expo and use `npm run start:mobile:tunnel`.
 - The backend server on port `8787` is only the health/coach API; it does not serve the Expo bundle. Expo/Metro must also be running on port `8081`.
+- Voice notes use `expo-audio`; iOS microphone permission text is configured in `app.json`.
+- Workout demo playback uses bundled MP4 loops through `expo-video`.
+- Daily summary and nudge reminders use local `expo-notifications`; there is no remote push-token backend yet.
 
 Phone testing:
 - keep the Mac and iPhone on the same Wi-Fi
@@ -145,12 +148,18 @@ If `GEMINI_API_KEY` or `secrets/google-service-account.json` is configured, `/co
 - personality strength from 1-5
 
 The structured plan response drives:
-- the Today hero, total score, insight cards, checklist, nudges, workout recommendation, and raw-number details
+- the Today hero, total score, insight cards, checklist, workout recommendation, voice-note context, and collapsible raw-number details
 - the Insights trend and correlation explanations
-- the Workouts recommendation and media prompt
-- Profile personality preview copy
+- the Workouts recommendation, local demo video, and media prompt
+- Profile personality controls, notification settings, and preview copy
 
 If AI is unavailable or returns invalid shape, the server and mobile client fall back to deterministic structured coaching output.
+
+The mobile client stores structured plan responses in AsyncStorage using a cache key built from scenario ID, latest health date, profile hash, diary context hash, coach personality, and personality strength. Coach vibe controls live only in `Profile`; changing vibe or strength refreshes all AI analysis for that vibe once, then switching back reuses the cached response to avoid unnecessary token usage.
+
+Workout recommendations include an optional `videoAssetKey`. The app maps coach personalities to local bundled clips under `assets/videos/`, so v1 has playable workout media without a paid video-generation provider.
+
+Voice note v1 records audio locally, stores URI and duration metadata with the diary entry, and adds a short text context line for the coach plan refresh. It does not transcribe audio yet.
 
 Supported coach personalities:
 - `gentle`: calm and low-pressure
@@ -189,6 +198,8 @@ src/
     apiBase.ts
     coachApi.ts
     healthApi.ts
+assets/
+  videos/
 server/
   ai-client.mjs
   coach-engine.mjs
@@ -216,6 +227,8 @@ research-dashboard/
 - Prefer 1-2 sentence insights over metric-heavy dashboards.
 - Keep AI-generated plan output app-ready, short, and validated before rendering.
 - Coach personality changes wording and intensity only; it must not change health-safety rules.
+- Keep coach personality controls in Profile only; Today and Workouts should reflect the selected vibe without exposing duplicate controls.
+- Preserve the client-side plan cache when changing vibe behavior so repeated vibe switches do not spend extra AI tokens for identical context.
 - Raw numbers should be available behind the coach explanation, not the dominant first-screen experience.
 
 ## Next Phase

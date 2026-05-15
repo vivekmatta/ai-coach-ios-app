@@ -25,8 +25,10 @@ The current health dashboard flow does not require live device hardware or Googl
 Current local flow:
 - run the local Node server
 - open the Expo app
-- switch between built-in mock sync scenarios from the `Today` screen
-- inspect the AI-generated daily plan, checklist, workout recommendation, nudges, and insights
+- inspect the AI-generated daily plan, checklist, workout recommendation, local demo video, and insights
+- add text, tag, or recorded voice-note context from `Today`
+- change the coach vibe from `Profile`; the app reuses cached AI plan outputs when switching back to a previous vibe/context
+- enable local daily summary and nudge notifications from `Profile`
 
 Optional AI integration:
 - either put the Google service account file at `secrets/google-service-account.json`
@@ -72,6 +74,10 @@ The mobile app is an iPhone-first research prototype for a screenless wearable c
 - insight-first health summaries instead of raw metric overload
 - AI-generated daily plans that combine mock biometrics, profile goals, diary context, and coach personality
 - coach personality modes with adjustable strength: Gentle, Direct, Hype, Nice, and Unhinged
+- Profile-only coach vibe controls with client-side per-context plan caching to avoid repeat AI token usage
+- local recorded voice notes that attach to diary context
+- bundled playable workout demo loops selected by coach vibe
+- local Expo notifications for daily summaries and subtle nudges
 - proxy signals for glucose and nitric oxide
 - contextual health guidance across recovery, sleep, stress, movement, and environment
 - a mock-sync-first pipeline that mirrors the expected SDK data flow before the watch hardware arrives
@@ -105,10 +111,10 @@ research-dashboard/
 ## Screens
 
 Mobile:
-- `Today` for the AI daily plan, total score, short insight cards, checklist, nudges, workout, diary context, and raw-number details
+- `Today` for the AI daily plan, total score, short insight cards, checklist, workout video, diary context, voice notes, and collapsible raw-number details
 - `Insights` for weekly focus, trend explanations, pattern snapshot, and observed correlations
-- `Workouts` for the AI-selected workout of the day, coaching cues, media prompt, and small workout library
-- `Profile` for coach personality, personality strength, notification settings, connected devices, and profile context
+- `Workouts` for the AI-selected workout of the day, coaching cues, playable local demo video, media prompt, and small workout library
+- `Profile` for coach personality, personality strength, local notification settings, connected devices, and profile context
 
 Web dashboard:
 - cohort overview
@@ -124,12 +130,15 @@ Web dashboard:
 - Expo
 - TypeScript
 - AsyncStorage
+- Expo Audio for recorded voice notes
+- Expo Video for bundled workout demo playback
+- Expo Notifications for local daily summary and nudge scheduling
 - Node local proxy for structured health data and server-side AI chat
 - Vite + React for the standalone research dashboard
 
 ## Design
 
-The UI uses a light, white-first visual system with warm neutrals and calm accent colors. The goal is a clean, modern, user-friendly mobile experience that feels more like a thoughtful coach than a dense analytics dashboard. Raw metrics remain available, but the first screen prioritizes plain-language coaching, tasks, and the meaning of the data.
+The UI uses a light, white-first visual system with warm neutrals, sage primary accents, subtle card borders, and low-shadow surfaces. The mobile app follows the supplied Health Coach mockups: action-first Today, explanatory Insights, workout media, and Profile-owned settings. Raw metrics remain available, but they stay behind a collapsible coach explanation instead of dominating the first screen.
 
 ## Mock Sync Endpoints
 
@@ -147,8 +156,10 @@ The local server now exposes:
 - 1-2 sentence insight cards
 - checkable daily tasks
 - subtle in-app notification copy
-- one workout recommendation with cues and a cached-media prompt
+- one workout recommendation with cues, a cached-media prompt, and a local video asset key
 - trend and correlation explanations
+
+The mobile client caches structured plan responses in AsyncStorage by scenario, latest health date, profile hash, diary context hash, coach personality, and personality strength. When a user switches back to a previously generated coach vibe for the same context, the cached plan is rendered without another `/coach/plan` request.
 
 Supported coach personalities:
 
