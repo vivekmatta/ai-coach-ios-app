@@ -25,10 +25,10 @@ export const palette = {
 };
 
 export const radius = {
-  xl: 28,
-  lg: 22,
-  md: 16,
-  sm: 12,
+  xl: 8,
+  lg: 8,
+  md: 8,
+  sm: 6,
   pill: 999,
 };
 

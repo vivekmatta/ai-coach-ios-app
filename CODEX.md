@@ -41,8 +41,8 @@ Ignored secret paths and patterns must include:
 
 Current secret handling:
 - Health dashboard and mock sync endpoints do not require secrets.
-- AI chat uses `GEMINI_API_KEY` from `.env` or the shell when configured.
-- If no API key is present, AI chat uses the Google service account JSON at `secrets/google-service-account.json`.
+- AI chat and structured coach plans use `GEMINI_API_KEY` from `.env` or the shell when configured.
+- If no API key is present, AI chat and structured coach plans use the Google service account JSON at `secrets/google-service-account.json`.
 - Vertex service account credentials also support vector DB build/retrieval experiments.
 - The mobile client never reads credential files directly.
 
@@ -137,7 +137,27 @@ If `GEMINI_API_KEY` or `secrets/google-service-account.json` is configured, `/co
 - current structured health context
 - optional retrieval context from the vector DB when available
 
-`/coach/plan` stays deterministic for now; do not add AI to plan generation until that behavior is explicitly requested.
+`/coach/plan` now supports structured AI plan generation for the mobile app. In structured mode, it combines:
+- current mock health context
+- profile goals
+- diary entries
+- selected coach personality
+- personality strength from 1-5
+
+The structured plan response drives:
+- the Today hero, total score, insight cards, checklist, nudges, workout recommendation, and raw-number details
+- the Insights trend and correlation explanations
+- the Workouts recommendation and media prompt
+- Profile personality preview copy
+
+If AI is unavailable or returns invalid shape, the server and mobile client fall back to deterministic structured coaching output.
+
+Supported coach personalities:
+- `gentle`: calm and low-pressure
+- `direct`: concise and practical
+- `hype`: energetic and momentum-building
+- `nice`: friendly and validating
+- `unhinged`: opt-in adult chaotic coach copy; profanity is allowed, but slurs, cruelty, unsafe advice, diagnosis, and shame are not allowed
 
 If the backend is unreachable, the mobile client still falls back to local canned responses.
 
@@ -194,6 +214,9 @@ research-dashboard/
 - Do not diagnose disease.
 - Keep UI action-first and explanation-first.
 - Prefer 1-2 sentence insights over metric-heavy dashboards.
+- Keep AI-generated plan output app-ready, short, and validated before rendering.
+- Coach personality changes wording and intensity only; it must not change health-safety rules.
+- Raw numbers should be available behind the coach explanation, not the dominant first-screen experience.
 
 ## Next Phase
 

@@ -9,29 +9,42 @@ import {
   Text,
   TextInput,
   View,
-  type DimensionValue,
 } from "react-native";
 
 import { AppTextInput, Card, PrimaryButton } from "./components";
 import { defaultProfile, onboardingQuestions } from "./data";
-import { sendCoachMessage } from "./services/coachApi";
+import {
+  buildLocalStructuredPlan,
+  generateStructuredPlan,
+  sendCoachMessage,
+} from "./services/coachApi";
 import {
   fetchHealthTimeline,
   fetchLatestHealthData,
   importMockHealthFixture,
 } from "./services/healthApi";
 import {
+  loadCoachTone,
+  loadDiaryEntries,
   loadOnboardingComplete,
+  loadPersonalityStrength,
   loadProfile,
+  saveCoachTone,
+  saveDiaryEntries,
   saveOnboardingComplete,
+  savePersonalityStrength,
   saveProfile,
 } from "./storage";
 import { palette, radius, spacing } from "./theme";
 import {
+  CoachCorrelation,
   CoachMessage,
-  HealthInsight,
-  HealthMetricCard,
-  HealthTimelinePoint,
+  CoachPlanResponse,
+  CoachScore,
+  CoachTask,
+  CoachToneMode,
+  CoachTrendInsight,
+  DiaryEntry,
   HealthTimelineResponse,
   LatestHealthResponse,
   TabKey,
@@ -50,49 +63,45 @@ const fields: Array<keyof UserProfile> = [
 
 const tabLabels: Record<TabKey, string> = {
   today: "Today",
-  progress: "Progress",
-  coach: "Coach",
-  you: "Profile",
+  insights: "Insights",
+  workouts: "Workouts",
+  profile: "Profile",
 };
 
 const tabGlyphs: Record<TabKey, string> = {
   today: "T",
-  progress: "P",
-  coach: "C",
-  you: "Y",
+  insights: "I",
+  workouts: "W",
+  profile: "P",
 };
 
-const defaultQuickPrompts = [
-  "What should I do today?",
-  "Why is my recovery low?",
-  "How can I sleep better tonight?",
+const toneLabels: Array<{ value: CoachToneMode; label: string; short: string }> = [
+  { value: "gentle", label: "Gentle", short: "G" },
+  { value: "direct", label: "Direct", short: "D" },
+  { value: "hype", label: "Hype", short: "H" },
+  { value: "nice", label: "Nice", short: "N" },
+  { value: "unhinged", label: "Unhinged", short: "U" },
 ];
 
-function toneColor(tone: string) {
-  switch (tone) {
-    case "good":
-      return palette.sage;
-    case "caution":
-      return palette.sand;
-    case "alert":
-      return palette.coral;
-    default:
-      return palette.blue;
-  }
-}
+const diaryTags = ["Ran", "Lifted", "Ate late", "Caffeine", "Stress"];
 
-function toneSoftColor(tone: string) {
-  switch (tone) {
-    case "good":
-      return palette.sageSoft;
-    case "caution":
-      return palette.sandSoft;
-    case "alert":
-      return palette.coralSoft;
-    default:
-      return palette.blueSoft;
-  }
-}
+const workoutLibrary = [
+  {
+    title: "Morning awakening",
+    meta: "15 min - gentle stretch",
+    icon: "sun",
+  },
+  {
+    title: "Core control",
+    meta: "12 min - bodyweight",
+    icon: "core",
+  },
+  {
+    title: "Evening wind down",
+    meta: "10 min - breathwork",
+    icon: "air",
+  },
+];
 
 function formatShortDate(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
@@ -118,6 +127,33 @@ function firstNameFrom(profile: UserProfile) {
   return profile.name.trim().split(" ")[0] || "there";
 }
 
+function toneColor(score: number) {
+  if (score >= 75) {
+    return palette.sage;
+  }
+  if (score >= 55) {
+    return palette.sand;
+  }
+  return palette.coral;
+}
+
+function taskIcon(category: CoachTask["category"]) {
+  switch (category) {
+    case "hydration":
+      return "H";
+    case "breath":
+      return "B";
+    case "sleep":
+      return "S";
+    case "nutrition":
+      return "N";
+    case "recovery":
+      return "R";
+    default:
+      return "M";
+  }
+}
+
 export function MobileApp() {
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(true);
@@ -131,10 +167,37 @@ export function MobileApp() {
   const [messages, setMessages] = useState<CoachMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [latestHealth, setLatestHealth] = useState<LatestHealthResponse | null>(null);
   const [timeline, setTimeline] = useState<HealthTimelineResponse | null>(null);
+  const [coachPlan, setCoachPlan] = useState<CoachPlanResponse | null>(null);
+  const [coachTone, setCoachTone] = useState<CoachToneMode>("gentle");
+  const [personalityStrength, setPersonalityStrength] = useState(3);
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
+  const [diaryDraft, setDiaryDraft] = useState("");
+  const [selectedDiaryTags, setSelectedDiaryTags] = useState<string[]>([]);
+  const [checkedTasks, setCheckedTasks] = useState<Record<string, boolean>>({});
+  const [voiceNoteState, setVoiceNoteState] = useState<"idle" | "captured">("idle");
 
-  async function loadHealthData() {
+  const firstName = useMemo(() => firstNameFrom(profile), [profile]);
+
+  async function refreshStructuredPlan(
+    health: LatestHealthResponse | null,
+    nextProfile = profile,
+    tone = coachTone,
+    strength = personalityStrength,
+    entries = diaryEntries
+  ) {
+    const plan = await generateStructuredPlan(health, nextProfile, tone, strength, entries);
+    setCoachPlan(plan);
+  }
+
+  async function loadHealthData(
+    nextProfile = profile,
+    tone = coachTone,
+    strength = personalityStrength,
+    entries = diaryEntries
+  ) {
     setHealthLoading(true);
     setHealthError(null);
 
@@ -156,12 +219,14 @@ export function MobileApp() {
               },
             ]
       );
+      await refreshStructuredPlan(latest, nextProfile, tone, strength, entries);
     } catch (error) {
       setHealthError(
         error instanceof Error
           ? error.message
           : "Could not load health data. Start the local server and retry."
       );
+      setCoachPlan(buildLocalStructuredPlan(null, nextProfile, tone, strength, entries));
     } finally {
       setHealthLoading(false);
     }
@@ -169,15 +234,21 @@ export function MobileApp() {
 
   useEffect(() => {
     async function bootstrap() {
-      const [storedProfile, done] = await Promise.all([
+      const [storedProfile, done, storedTone, storedStrength, storedDiary] = await Promise.all([
         loadProfile(),
         loadOnboardingComplete(),
+        loadCoachTone(),
+        loadPersonalityStrength(),
+        loadDiaryEntries(),
       ]);
 
       setProfile(storedProfile);
       setOnboardingDone(done);
+      setCoachTone(storedTone);
+      setPersonalityStrength(storedStrength);
+      setDiaryEntries(storedDiary);
       setLoading(false);
-      await loadHealthData();
+      await loadHealthData(storedProfile, storedTone, storedStrength, storedDiary);
     }
 
     void bootstrap();
@@ -188,8 +259,6 @@ export function MobileApp() {
       setDraft(profile[fields[questionIndex]] ?? "");
     }
   }, [onboardingDone, profile, questionIndex]);
-
-  const firstName = useMemo(() => firstNameFrom(profile), [profile]);
 
   async function advanceOnboarding() {
     const key = fields[questionIndex];
@@ -202,6 +271,7 @@ export function MobileApp() {
       setOnboardingDone(true);
       setQuestionIndex(0);
       setDraft("");
+      await refreshStructuredPlan(latestHealth, nextProfile);
       return;
     }
 
@@ -215,7 +285,7 @@ export function MobileApp() {
       return;
     }
 
-    setTab("coach");
+    setChatOpen(true);
     setChatInput("");
     setChatLoading(true);
     setMessages((current) => [
@@ -257,12 +327,66 @@ export function MobileApp() {
           text: `Loaded ${latest.scenarioLabel}. ${latest.summary}`,
         },
       ]);
+      await refreshStructuredPlan(latest);
     } catch (error) {
       setHealthError(error instanceof Error ? error.message : "Could not switch scenarios.");
     } finally {
       setScenarioLoading(false);
     }
   }
+
+  async function handleToneChange(tone: CoachToneMode) {
+    setCoachTone(tone);
+    await saveCoachTone(tone);
+    await refreshStructuredPlan(latestHealth, profile, tone, personalityStrength, diaryEntries);
+  }
+
+  async function handleStrengthChange(strength: number) {
+    setPersonalityStrength(strength);
+    await savePersonalityStrength(strength);
+    await refreshStructuredPlan(latestHealth, profile, coachTone, strength, diaryEntries);
+  }
+
+  async function addDiaryEntry(textOverride?: string, tagsOverride?: string[]) {
+    const text = (textOverride ?? diaryDraft).trim();
+    const tags = tagsOverride ?? selectedDiaryTags;
+    if (!text && !tags.length) {
+      return;
+    }
+
+    const nextEntries = [
+      {
+        id: `diary-${Date.now()}`,
+        text: text || tags.join(", "),
+        tags,
+        createdAt: new Date().toISOString(),
+      },
+      ...diaryEntries,
+    ].slice(0, 20);
+    setDiaryEntries(nextEntries);
+    setDiaryDraft("");
+    setSelectedDiaryTags([]);
+    setVoiceNoteState("idle");
+    await saveDiaryEntries(nextEntries);
+    await refreshStructuredPlan(latestHealth, profile, coachTone, personalityStrength, nextEntries);
+  }
+
+  function toggleDiaryTag(tag: string) {
+    setSelectedDiaryTags((current) =>
+      current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]
+    );
+  }
+
+  function toggleTask(taskId: string) {
+    setCheckedTasks((current) => ({ ...current, [taskId]: !current[taskId] }));
+  }
+
+  function captureVoiceNote() {
+    setVoiceNoteState("captured");
+    setDiaryDraft((current) => current || "Voice note captured for coach context.");
+  }
+
+  const plan = coachPlan ?? buildLocalStructuredPlan(latestHealth, profile, coachTone, personalityStrength, diaryEntries);
 
   if (loading) {
     return (
@@ -282,10 +406,10 @@ export function MobileApp() {
       >
         <Card style={styles.onboardingHero}>
           <Text style={styles.pill}>AI Coach Study</Text>
-          <Text style={styles.onboardingTitle}>A calmer, clearer health coach.</Text>
+          <Text style={styles.onboardingTitle}>A coach that turns signals into a plan.</Text>
           <Text style={styles.onboardingBody}>
-            This prototype turns wearable sync data into simple daily guidance for student
-            participants.
+            This prototype combines recovery, sleep, stress, movement, and your goals into a
+            simple daily health plan.
           </Text>
         </Card>
 
@@ -319,67 +443,122 @@ export function MobileApp() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <AppHeader tab={tab} firstName={firstName} />
-
-      {tab === "today" ? (
-        <TodayScreen
-          health={latestHealth}
-          healthLoading={healthLoading}
-          healthError={healthError}
-          scenarioLoading={scenarioLoading}
-          onRetry={() => {
-            void loadHealthData();
-          }}
-          onLoadScenario={(fixtureId) => {
-            void handleScenarioChange(fixtureId);
-          }}
-        />
-      ) : null}
-      {tab === "progress" ? (
-        <ProgressScreen
-          health={latestHealth}
-          timeline={timeline}
-          healthLoading={healthLoading}
-          healthError={healthError}
-          onRetry={() => {
-            void loadHealthData();
-          }}
-        />
-      ) : null}
-      {tab === "coach" ? (
-        <CoachScreen
+      {chatOpen ? (
+        <CoachChatScreen
           messages={messages}
           input={chatInput}
           setInput={setChatInput}
           loading={chatLoading}
+          onClose={() => setChatOpen(false)}
           onSend={() => {
             void handleSendMessage();
           }}
-          onPrompt={(prompt) => {
-            void handleSendMessage(prompt);
-          }}
         />
-      ) : null}
-      {tab === "you" ? <ProfileScreen profile={profile} latestHealth={latestHealth} /> : null}
+      ) : (
+        <>
+          <AppHeader
+            tab={tab}
+            firstName={firstName}
+            subtitle={tab === "today" ? "Coach is active" : "Coach is reviewing"}
+            onChat={() => setChatOpen(true)}
+          />
 
-      {tab !== "coach" ? <FloatingCoachButton onPress={() => setTab("coach")} /> : null}
-      <BottomTabs activeTab={tab} onChange={setTab} />
+          {tab === "today" ? (
+            <TodayScreen
+              plan={plan}
+              health={latestHealth}
+              healthLoading={healthLoading}
+              healthError={healthError}
+              scenarioLoading={scenarioLoading}
+              coachTone={coachTone}
+              personalityStrength={personalityStrength}
+              checkedTasks={checkedTasks}
+              selectedDiaryTags={selectedDiaryTags}
+              diaryDraft={diaryDraft}
+              voiceNoteState={voiceNoteState}
+              onDiaryDraftChange={setDiaryDraft}
+              onToggleDiaryTag={toggleDiaryTag}
+              onToggleTask={toggleTask}
+              onCaptureVoiceNote={captureVoiceNote}
+              onAddDiary={() => {
+                void addDiaryEntry();
+              }}
+              onToneChange={(tone) => {
+                void handleToneChange(tone);
+              }}
+              onStrengthChange={(strength) => {
+                void handleStrengthChange(strength);
+              }}
+              onRetry={() => {
+                void loadHealthData(profile, coachTone, personalityStrength, diaryEntries);
+              }}
+              onLoadScenario={(fixtureId) => {
+                void handleScenarioChange(fixtureId);
+              }}
+            />
+          ) : null}
+          {tab === "insights" ? (
+            <InsightsScreen plan={plan} health={latestHealth} timeline={timeline} />
+          ) : null}
+          {tab === "workouts" ? (
+            <WorkoutsScreen
+              plan={plan}
+              coachTone={coachTone}
+              personalityStrength={personalityStrength}
+              onToneChange={(tone) => void handleToneChange(tone)}
+              onStrengthChange={(strength) => void handleStrengthChange(strength)}
+            />
+          ) : null}
+          {tab === "profile" ? (
+            <ProfileScreen
+              profile={profile}
+              plan={plan}
+              coachTone={coachTone}
+              personalityStrength={personalityStrength}
+              latestHealth={latestHealth}
+              onToneChange={(tone) => {
+                void handleToneChange(tone);
+              }}
+              onStrengthChange={(strength) => {
+                void handleStrengthChange(strength);
+              }}
+            />
+          ) : null}
+
+          <BottomTabs activeTab={tab} onChange={setTab} />
+        </>
+      )}
     </KeyboardAvoidingView>
   );
 }
 
-function AppHeader({ tab, firstName }: { tab: TabKey; firstName: string }) {
+function AppHeader({
+  tab,
+  firstName,
+  subtitle,
+  onChat,
+}: {
+  tab: TabKey;
+  firstName: string;
+  subtitle: string;
+  onChat: () => void;
+}) {
   return (
     <View style={styles.header}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{firstName.slice(0, 1).toUpperCase()}</Text>
+      <View style={styles.headerLeft}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{firstName.slice(0, 1).toUpperCase()}</Text>
+        </View>
+        <View>
+          <Text style={styles.headerTitle}>{tab === "today" ? `Good morning, ${firstName}` : tabLabels[tab]}</Text>
+          <View style={styles.activeRow}>
+            <View style={styles.statusDot} />
+            <Text style={styles.headerSubtitle}>{subtitle}</Text>
+          </View>
+        </View>
       </View>
-      <View style={styles.headerCenter}>
-        <Text style={styles.headerTitle}>{tabLabels[tab]}</Text>
-        <Text style={styles.headerSubtitle}>AI Health Coach</Text>
-      </View>
-      <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-        <Text style={styles.iconButtonText}>Set</Text>
+      <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} onPress={onChat}>
+        <Text style={styles.iconButtonText}>chat</Text>
       </Pressable>
     </View>
   );
@@ -409,17 +588,45 @@ function EmptyState({
 }
 
 function TodayScreen({
+  plan,
   health,
   healthLoading,
   healthError,
   scenarioLoading,
+  coachTone,
+  personalityStrength,
+  checkedTasks,
+  selectedDiaryTags,
+  diaryDraft,
+  voiceNoteState,
+  onDiaryDraftChange,
+  onToggleDiaryTag,
+  onToggleTask,
+  onCaptureVoiceNote,
+  onAddDiary,
+  onToneChange,
+  onStrengthChange,
   onRetry,
   onLoadScenario,
 }: {
+  plan: CoachPlanResponse;
   health: LatestHealthResponse | null;
   healthLoading: boolean;
   healthError: string | null;
   scenarioLoading: boolean;
+  coachTone: CoachToneMode;
+  personalityStrength: number;
+  checkedTasks: Record<string, boolean>;
+  selectedDiaryTags: string[];
+  diaryDraft: string;
+  voiceNoteState: "idle" | "captured";
+  onDiaryDraftChange: (value: string) => void;
+  onToggleDiaryTag: (tag: string) => void;
+  onToggleTask: (taskId: string) => void;
+  onCaptureVoiceNote: () => void;
+  onAddDiary: () => void;
+  onToneChange: (tone: CoachToneMode) => void;
+  onStrengthChange: (strength: number) => void;
   onRetry: () => void;
   onLoadScenario: (fixtureId: string) => void;
 }) {
@@ -444,60 +651,138 @@ function TodayScreen({
     );
   }
 
-  const primaryMetrics = health.metricCards.filter((metric) =>
-    ["recovery", "sleep", "stress", "hrv"].includes(metric.id)
-  );
-
   return (
     <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
-      <Card style={styles.heroCard}>
-        <View style={styles.ambientBlob} />
-        <Text style={styles.heroTitle}>{health.headline}</Text>
-        <View style={styles.syncRow}>
+      <View style={styles.heroSection}>
+        <View style={styles.scoreRow}>
+          <Text style={styles.statusPill}>{plan.status}</Text>
+          <Text style={styles.overallScore}>{plan.overallScore}</Text>
+        </View>
+        <Text style={styles.heroTitle}>{plan.headline}</Text>
+        <Text style={styles.heroBody}>{plan.summary}</Text>
+        <View style={styles.activeRow}>
           <View style={[styles.statusDot, { backgroundColor: health.syncStatus.stale ? palette.coral : palette.sage }]} />
           <Text style={styles.syncText}>
-            {health.syncStatus.label} • {formatShortDate(health.latestDay.date)}
+            {health.syncStatus.label} - {formatShortDate(health.latestDay.date)}
           </Text>
         </View>
-        <Text style={styles.heroBody}>{health.summary}</Text>
-        <View style={styles.tagRow}>
-          <Text style={styles.softTag}>{health.latestDay.recoveryScore < 55 ? "Rest Day" : "Steady Build"}</Text>
-          <Text style={styles.softTag}>{health.scenarioLabel}</Text>
-        </View>
-      </Card>
+      </View>
 
-      <View style={styles.bentoGrid}>
-        {primaryMetrics.map((metric, index) => (
-          <MetricBentoCard key={metric.id} metric={metric} large={index === 0} />
+      <View style={styles.insightGrid}>
+        {plan.cards.map((card) => (
+          <InsightBentoCard key={card.id} score={card} />
         ))}
       </View>
 
-      <SectionHeading title="Today's action plan" />
+      <SectionHeading title="Today's moves" />
       <Card style={styles.actionList}>
-        {health.actionPlan.slice(0, 4).map((item) => (
-          <ActionRow key={item.title} title={item.title} text={item.text} />
+        {plan.tasks.slice(0, 5).map((task) => (
+          <ActionRow
+            key={task.id}
+            task={task}
+            checked={Boolean(checkedTasks[task.id])}
+            onToggle={() => onToggleTask(task.id)}
+          />
         ))}
       </Card>
 
-      <SectionHeading title="What matters most" />
-      {health.insights.slice(0, 3).map((insight) => (
-        <InsightCard key={insight.title} insight={insight} />
-      ))}
-
-      <Card style={styles.proxyCard}>
-        <Text style={styles.cardTitle}>Proxy indicators</Text>
+      <SectionHeading title="Coach nudges" />
+      <Card style={styles.nudgeCard}>
         <Text style={styles.cardBody}>
-          Glucose and nitric oxide are behavior proxies only, not measured medical values.
+          Your coach is active but subtle today. It will nudge hydration, breathing, movement, and
+          wind-down only when the plan needs help.
         </Text>
-        <View style={styles.proxyGrid}>
-          <MiniStat label="Glucose proxy" value={health.latestDay.glucoseProxy} />
-          <MiniStat label="Nitric oxide proxy" value={health.latestDay.nitricOxideProxy} />
+        {plan.alerts.slice(0, 3).map((alert) => (
+          <View key={alert.id} style={styles.nudgeRow}>
+            <View style={styles.statusDot} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>{alert.title}</Text>
+              <Text style={styles.actionText}>{alert.detail}</Text>
+            </View>
+          </View>
+        ))}
+      </Card>
+
+      <SectionHeading title="Workout today" />
+      <WorkoutHero plan={plan} />
+
+      <Card>
+        <Text style={styles.cardTitle}>Why this plan?</Text>
+        <Text style={styles.cardBody}>Raw numbers are here when you want them, but the coach uses them to decide what to do next.</Text>
+        <View style={styles.rawGrid}>
+          <MiniStat label="RHR" value={`${health.latestDay.restingHeartRate} bpm`} />
+          <MiniStat label="HRV" value={`${health.latestDay.hrv} ms`} />
+          <MiniStat label="Sleep" value={formatSleep(health.latestDay.sleepDurationMinutes)} />
+          <MiniStat label="Steps" value={health.latestDay.steps.toLocaleString()} />
+          <MiniStat label="Stress" value={health.latestDay.stressLabel} />
         </View>
       </Card>
 
+      <Card style={styles.diaryCard}>
+        <Text style={styles.cardTitle}>What changed today?</Text>
+        <View style={styles.diaryInputRow}>
+          <TextInput
+            value={diaryDraft}
+            onChangeText={onDiaryDraftChange}
+            placeholder="Add a note..."
+            placeholderTextColor={palette.textFaint}
+            style={styles.diaryInput}
+            returnKeyType="done"
+            onSubmitEditing={onAddDiary}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add voice note placeholder"
+            style={({ pressed }) => [styles.micButton, voiceNoteState === "captured" && styles.micButtonActive, pressed && styles.pressed]}
+            onPress={onCaptureVoiceNote}
+          >
+            <Text style={[styles.micButtonText, voiceNoteState === "captured" && styles.micButtonTextActive]}>
+              {voiceNoteState === "captured" ? "ok" : "mic"}
+            </Text>
+          </Pressable>
+        </View>
+        <View style={styles.chipWrap}>
+          {diaryTags.map((tag) => {
+            const active = selectedDiaryTags.includes(tag);
+            return (
+              <Pressable
+                key={tag}
+                style={({ pressed }) => [
+                  styles.smallChip,
+                  active && styles.smallChipActive,
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => onToggleDiaryTag(tag)}
+              >
+                <Text style={[styles.smallChipText, active && styles.smallChipTextActive]}>{tag}</Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            style={({ pressed }) => [
+              styles.saveContextButton,
+              !diaryDraft.trim() && !selectedDiaryTags.length && styles.disabledButton,
+              pressed && styles.pressed,
+            ]}
+            disabled={!diaryDraft.trim() && !selectedDiaryTags.length}
+            onPress={onAddDiary}
+          >
+            <Text style={styles.saveContextText}>Save context</Text>
+          </Pressable>
+        </View>
+      </Card>
+
+      <ToneSelector
+        value={coachTone}
+        strength={personalityStrength}
+        compact
+        onChange={onToneChange}
+        onStrengthChange={onStrengthChange}
+      />
+
       <Card>
         <Text style={styles.cardTitle}>Mock sync inputs</Text>
-        <Text style={styles.cardBody}>Use these fixtures until the watch SDK is wired in.</Text>
+        <Text style={styles.cardBody}>Use these scenarios until the watch SDK is wired in.</Text>
         <View style={styles.scenarioWrap}>
           {health.availableFixtures.map((fixture) => {
             const active = fixture.id === health.scenarioId;
@@ -521,145 +806,436 @@ function TodayScreen({
         </View>
         {scenarioLoading ? <Text style={styles.footnote}>Switching scenarios...</Text> : null}
       </Card>
-
     </ScrollView>
   );
 }
 
-function FloatingCoachButton({ onPress }: { onPress: () => void }) {
+function InsightBentoCard({ score }: { score: CoachScore }) {
+  return (
+    <Card style={styles.insightBento}>
+      <View style={[styles.metricIcon, { backgroundColor: `${toneColor(score.score)}22` }]}>
+        <Text style={[styles.metricIconText, { color: toneColor(score.score) }]}>
+          {score.label.slice(0, 2).toLowerCase()}
+        </Text>
+      </View>
+      <Text style={styles.insightTitle}>{score.label}</Text>
+      <Text style={styles.cardBody}>{score.explanation}</Text>
+    </Card>
+  );
+}
+
+function ActionRow({
+  task,
+  checked,
+  onToggle,
+}: {
+  task: CoachTask;
+  checked: boolean;
+  onToggle: () => void;
+}) {
   return (
     <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Open AI Coach"
-      style={({ pressed }) => [styles.floatingCoachButton, pressed && styles.pressed]}
-      onPress={onPress}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      onPress={onToggle}
+      style={({ pressed }) => [styles.actionRow, checked && styles.actionRowChecked, pressed && styles.pressed]}
     >
-      <Text style={styles.floatingCoachBadge}>AI</Text>
-      <Text style={styles.floatingCoachText}>Coach</Text>
+      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+        <Text style={[styles.checkboxText, checked && styles.checkboxTextChecked]}>
+          {checked ? "✓" : taskIcon(task.category)}
+        </Text>
+      </View>
+      <View style={styles.actionCopy}>
+        <Text style={[styles.actionTitle, checked && styles.checkedText]}>{task.title}</Text>
+        <Text style={styles.actionText} numberOfLines={2}>{task.detail}</Text>
+      </View>
     </Pressable>
   );
 }
 
-function ProgressScreen({
+function WorkoutHero({ plan }: { plan: CoachPlanResponse }) {
+  const workout = plan.workoutOfTheDay;
+  return (
+    <Card style={styles.workoutCard}>
+      <View style={styles.workoutVisual}>
+        <View style={styles.playButton}>
+          <Text style={styles.playButtonText}>play</Text>
+        </View>
+        <Text style={styles.workoutVisualText}>cached demo loop</Text>
+      </View>
+      <View style={styles.workoutCopy}>
+        <View style={styles.rowBetween}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{workout.title}</Text>
+            <Text style={styles.footnote}>{workout.duration} - {workout.label}</Text>
+          </View>
+          <Text style={styles.statusPill}>{workout.label}</Text>
+        </View>
+        <Text style={styles.cardBody}>{workout.why}</Text>
+        <View style={styles.cueBox}>
+          <Text style={styles.label}>Coaching cues</Text>
+          {workout.cues.slice(0, 3).map((cue) => (
+            <Text key={cue} style={styles.cueText}>{cue}</Text>
+          ))}
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+function InsightsScreen({
+  plan,
   health,
   timeline,
-  healthLoading,
-  healthError,
-  onRetry,
 }: {
+  plan: CoachPlanResponse;
   health: LatestHealthResponse | null;
   timeline: HealthTimelineResponse | null;
-  healthLoading: boolean;
-  healthError: string | null;
-  onRetry: () => void;
 }) {
-  if (healthLoading && !timeline) {
-    return (
-      <EmptyState
-        title="Loading progress"
-        body="Fetching the seven-day trend view."
-        loading
-        onRetry={onRetry}
-      />
-    );
-  }
-
-  if (!health || !timeline) {
-    return (
-      <EmptyState
-        title="Progress data is unavailable"
-        body={healthError || "Load a mock sync scenario to populate the trend view."}
-        onRetry={onRetry}
-      />
-    );
-  }
-
-  const hrvMetric = health.metricCards.find((metric) => metric.id === "hrv");
-  const stressMetric = health.metricCards.find((metric) => metric.id === "stress");
-  const avgRecovery = average(timeline.points.map((point) => point.recoveryScore));
-  const avgSleep = average(timeline.points.map((point) => point.sleepScore));
-
+  const avgRecovery = average(timeline?.points.map((point) => point.recoveryScore) ?? []);
   return (
     <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
-      <Card style={styles.coachingInsight}>
-        <View style={styles.insightIcon}>
-          <Text style={styles.insightIconText}>AI</Text>
-        </View>
-        <Text style={styles.summaryTitle}>
-          {avgRecovery >= 60 ? "Looking steadier" : "Recovery needs attention"}
+      <Card style={styles.weeklyFocus}>
+        <Text style={styles.cardTitle}>Weekly focus</Text>
+        <Text style={styles.weeklyText}>
+          {timeline?.trendSummary ?? "The coach is watching the relationship between recovery, sleep, movement, and stress before recommending harder work."}
         </Text>
-        <Text style={styles.cardBody}>{timeline.trendSummary}</Text>
+        {health ? <Text style={styles.footnote}>Active scenario: {health.scenarioLabel}</Text> : null}
       </Card>
 
-      <View style={styles.twoColumn}>
-        <StatCard
-          label="HRV"
-          value={hrvMetric?.value ?? `${health.latestDay.hrv} ms`}
-          context={`vs ${health.latestDay.hrvBaseline} ms baseline`}
-          tone="caution"
-        />
-        <StatCard
-          label="Resting HR"
-          value={`${health.latestDay.restingHeartRate} bpm`}
-          context="Latest synced day"
-          tone="good"
-        />
-      </View>
-
-      <Card style={styles.stepsCard}>
-        <View>
-          <Text style={styles.metricLabel}>Daily Steps</Text>
-          <Text style={styles.stepsValue}>
-            {health.latestDay.steps.toLocaleString()}
-            <Text style={styles.stepsGoal}> / {health.latestDay.stepGoal.toLocaleString()}</Text>
-          </Text>
-        </View>
-        <RingProgress percent={health.latestDay.steps / health.latestDay.stepGoal} />
-      </Card>
-
-      <Card>
-        <View style={styles.rowBetween}>
-          <Text style={styles.cardTitle}>Recovery</Text>
-          <Text style={styles.rangePill}>7 Days</Text>
-        </View>
-        <TrendBars points={timeline.points} valueKey="recoveryScore" color={palette.sage} />
-      </Card>
+      <SectionHeading title="Key trends" />
+      {plan.trendInsights.map((trend) => (
+        <TrendCard key={trend.id} trend={trend} />
+      ))}
 
       <Card>
         <Text style={styles.cardTitle}>Pattern snapshot</Text>
-        <View style={styles.proxyGrid}>
-          <MiniStat label="Avg recovery" value={`${avgRecovery}/100`} />
-          <MiniStat label="Avg sleep" value={`${avgSleep}/100`} />
-          <MiniStat label="Stress" value={stressMetric?.value ?? health.latestDay.stressLabel} />
+        <View style={styles.rawGrid}>
+          <MiniStat label="Avg recovery" value={`${avgRecovery || plan.overallScore}/100`} />
+          <MiniStat label="Coach score" value={`${plan.overallScore}/100`} />
+          <MiniStat label="Status" value={plan.status} />
         </View>
       </Card>
 
-      {timeline.points.map((point) => (
-        <TimelinePointCard key={point.date} point={point} />
+      <SectionHeading title="Observed correlations" />
+      {plan.correlations.map((correlation) => (
+        <CorrelationCard key={correlation.id} correlation={correlation} />
       ))}
     </ScrollView>
   );
 }
 
-function CoachScreen({
+function TrendCard({ trend }: { trend: CoachTrendInsight }) {
+  const max = Math.max(...trend.values, 100);
+  return (
+    <Card style={styles.trendCard}>
+      <View style={styles.rowBetween}>
+        <View style={styles.trendTitleRow}>
+          <View style={styles.metricIcon}>
+            <Text style={styles.metricIconText}>{trend.title.slice(0, 2).toLowerCase()}</Text>
+          </View>
+          <Text style={styles.insightTitle}>{trend.title}</Text>
+        </View>
+        <Text style={styles.statusPill}>{trend.status}</Text>
+      </View>
+      <View style={styles.trendBars}>
+        {trend.values.map((value, index) => (
+          <View key={`${trend.id}-${index}`} style={styles.trendTrack}>
+            <View style={[styles.trendFill, { height: Math.max(8, (value / max) * 72) }]} />
+          </View>
+        ))}
+      </View>
+      <View style={styles.coachTake}>
+        <Text style={styles.label}>Coach's take</Text>
+        <Text style={styles.cardBody}>{trend.explanation}</Text>
+      </View>
+    </Card>
+  );
+}
+
+function CorrelationCard({ correlation }: { correlation: CoachCorrelation }) {
+  return (
+    <Card style={styles.correlationCard}>
+      <View style={styles.metricIcon}>
+        <Text style={styles.metricIconText}>{correlation.title.slice(0, 2).toLowerCase()}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.insightTitle}>{correlation.title}</Text>
+        <Text style={styles.cardBody}>{correlation.explanation}</Text>
+      </View>
+    </Card>
+  );
+}
+
+function WorkoutsScreen({
+  plan,
+  coachTone,
+  personalityStrength,
+  onToneChange,
+  onStrengthChange,
+}: {
+  plan: CoachPlanResponse;
+  coachTone: CoachToneMode;
+  personalityStrength: number;
+  onToneChange: (tone: CoachToneMode) => void;
+  onStrengthChange: (strength: number) => void;
+}) {
+  return (
+    <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
+      <ToneSelector
+        value={coachTone}
+        strength={personalityStrength}
+        onChange={onToneChange}
+        onStrengthChange={onStrengthChange}
+      />
+      <SectionHeading title="Recommended for you" />
+      <WorkoutHero plan={plan} />
+
+      <Card style={styles.coachTake}>
+        <Text style={styles.label}>AI media prompt</Text>
+        <Text style={styles.cardBody}>{plan.workoutOfTheDay.mediaPrompt}</Text>
+      </Card>
+
+      <SectionHeading title="Library" />
+      {workoutLibrary.map((item) => (
+        <Card key={item.title} style={styles.libraryRow}>
+          <View style={styles.libraryThumb}>
+            <Text style={styles.libraryIcon}>{item.icon}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.insightTitle}>{item.title}</Text>
+            <Text style={styles.footnote}>{item.meta}</Text>
+          </View>
+          <View style={styles.smallPlay}>
+            <Text style={styles.smallPlayText}>go</Text>
+          </View>
+        </Card>
+      ))}
+    </ScrollView>
+  );
+}
+
+function ProfileScreen({
+  profile,
+  plan,
+  coachTone,
+  personalityStrength,
+  latestHealth,
+  onToneChange,
+  onStrengthChange,
+}: {
+  profile: UserProfile;
+  plan: CoachPlanResponse;
+  coachTone: CoachToneMode;
+  personalityStrength: number;
+  latestHealth: LatestHealthResponse | null;
+  onToneChange: (tone: CoachToneMode) => void;
+  onStrengthChange: (strength: number) => void;
+}) {
+  return (
+    <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
+      <View style={styles.profileHeader}>
+        <View style={styles.profileAvatar}>
+          <Text style={styles.profileAvatarText}>{firstNameFrom(profile).slice(0, 1).toUpperCase()}</Text>
+        </View>
+        <Text style={styles.profileName}>{profile.name || "Your profile"}</Text>
+        <Text style={styles.statusPill}>{plan.status}</Text>
+      </View>
+
+      <Card>
+        <Text style={styles.cardTitle}>Coach style</Text>
+        <Text style={styles.cardBody}>Adjust how your AI coach talks while keeping the same safety rules.</Text>
+        <ToneSelector
+          value={coachTone}
+          strength={personalityStrength}
+          compact
+          onChange={onToneChange}
+          onStrengthChange={onStrengthChange}
+        />
+        <Text style={styles.personalityPreview}>{personalityPreview(coachTone, personalityStrength)}</Text>
+        <View style={styles.settingRow}>
+          <View>
+            <Text style={styles.actionTitle}>Notifications</Text>
+            <Text style={styles.footnote}>Daily summary and subtle nudges</Text>
+          </View>
+          <View style={styles.toggleOn}>
+            <View style={styles.toggleKnob} />
+          </View>
+        </View>
+      </Card>
+
+      <Card>
+        <Text style={styles.cardTitle}>Connected devices</Text>
+        <DeviceRow title="Apple Health" detail="Height and weight planned for native sync" active />
+        <DeviceRow title="Screenless wearable" detail={latestHealth ? `Mock sync: ${latestHealth.scenarioLabel}` : "Mock data active"} active />
+        <DeviceRow title="Add device" detail="Watch SDK integration comes next" />
+      </Card>
+
+      <Card>
+        <Text style={styles.cardTitle}>{profile.name || "Your profile"}</Text>
+        <Text style={styles.cardBody}>
+          Goal: {profile.goals || "Improve overall wellness"}{"\n"}
+          Preferred movement: {profile.exerciseType || "Not set"}{"\n"}
+          Sleep target: {profile.sleepTime || "Not set"}{"\n"}
+          Stress context: {profile.workStress || "Not set"}
+        </Text>
+      </Card>
+
+      <Card style={styles.linkList}>
+        {["Personal information", "Privacy & security", "Support & FAQ", "Log out"].map((label) => (
+          <View key={label} style={styles.linkRow}>
+            <Text style={[styles.actionTitle, label === "Log out" && { color: palette.error }]}>{label}</Text>
+            <Text style={styles.footnote}>open</Text>
+          </View>
+        ))}
+      </Card>
+    </ScrollView>
+  );
+}
+
+function DeviceRow({ title, detail, active }: { title: string; detail: string; active?: boolean }) {
+  return (
+    <View style={styles.deviceRow}>
+      <View style={styles.metricIcon}>
+        <Text style={styles.metricIconText}>{title.slice(0, 2).toLowerCase()}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.actionTitle}>{title}</Text>
+        <Text style={styles.footnote}>{detail}</Text>
+      </View>
+      <Text style={[styles.statusPill, !active && styles.neutralPill]}>{active ? "Synced" : "Add"}</Text>
+    </View>
+  );
+}
+
+function ToneSelector({
+  value,
+  strength,
+  compact,
+  onChange,
+  onStrengthChange,
+}: {
+  value: CoachToneMode;
+  strength: number;
+  compact?: boolean;
+  onChange: (tone: CoachToneMode) => void;
+  onStrengthChange: (strength: number) => void;
+}) {
+  return (
+    <View style={[styles.toneWrap, compact && styles.toneWrapCompact]}>
+      {!compact ? <Text style={styles.label}>Coach vibe</Text> : null}
+      <View style={styles.toneSegment}>
+        {toneLabels.map((tone) => {
+          const active = tone.value === value;
+          return (
+            <Pressable
+              key={tone.value}
+              onPress={() => onChange(tone.value)}
+              style={({ pressed }) => [
+                styles.toneButton,
+                active && styles.toneButtonActive,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.toneText, active && styles.toneTextActive]}>
+                {compact ? tone.short : tone.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.strengthRow}>
+        <Text style={styles.label}>Strength</Text>
+        <View style={styles.strengthDots}>
+          {[1, 2, 3, 4, 5].map((level) => (
+            <Pressable
+              key={level}
+              accessibilityRole="button"
+              accessibilityLabel={`Set personality strength ${level}`}
+              onPress={() => onStrengthChange(level)}
+              style={({ pressed }) => [
+                styles.strengthDot,
+                level <= strength && styles.strengthDotActive,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.strengthDotText, level <= strength && styles.strengthDotTextActive]}>
+                {level}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function personalityPreview(tone: CoachToneMode, strength: number) {
+  if (tone === "unhinged" && strength >= 5) {
+    return "Example: We are not raw-dogging this day on low recovery. Drink the damn water, move easy, and let sleep do its job.";
+  }
+  if (tone === "unhinged") {
+    return "Example: Tiny chaos, useful plan. Your nervous system wants a reset, not a heroic workout arc.";
+  }
+  if (tone === "direct") {
+    return strength >= 4
+      ? "Example: Keep it easy today. Hydrate early, skip intensity, protect bedtime."
+      : "Example: The priority is recovery. Use easy movement and an earlier wind-down.";
+  }
+  if (tone === "hype") {
+    return "Example: Today's mission is simple: stack easy wins and build momentum without draining the tank.";
+  }
+  if (tone === "nice") {
+    return "Example: You are not off track. A small reset today is enough to make tomorrow easier.";
+  }
+  return "Example: Let's keep this simple and kind to your system. Small actions count today.";
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.miniStat}>
+      <Text style={styles.miniStatLabel}>{label}</Text>
+      <Text style={styles.miniStatValue}>{value}</Text>
+    </View>
+  );
+}
+
+function SectionHeading({ title }: { title: string }) {
+  return <Text style={styles.sectionTitle}>{title}</Text>;
+}
+
+function CoachChatScreen({
   messages,
   input,
   setInput,
   loading,
+  onClose,
   onSend,
-  onPrompt,
 }: {
   messages: CoachMessage[];
   input: string;
   setInput: (value: string) => void;
   loading: boolean;
+  onClose: () => void;
   onSend: () => void;
-  onPrompt: (prompt: string) => void;
 }) {
   return (
     <View style={styles.coachScreen}>
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>AI</Text>
+          </View>
+          <View>
+            <Text style={styles.headerTitle}>Coach chat</Text>
+            <Text style={styles.headerSubtitle}>Short answers, practical next steps</Text>
+          </View>
+        </View>
+        <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} onPress={onClose}>
+          <Text style={styles.iconButtonText}>done</Text>
+        </Pressable>
+      </View>
       <ScrollView style={styles.content} contentContainerStyle={styles.chatContent}>
-        <Text style={styles.chatTimestamp}>Today, 8:30 AM</Text>
         {messages.map((message) => (
           <View
             key={message.id}
@@ -668,11 +1244,6 @@ function CoachScreen({
               message.role === "user" ? styles.messageRowUser : styles.messageRowCoach,
             ]}
           >
-            {message.role === "assistant" ? (
-              <View style={styles.coachAvatar}>
-                <Text style={styles.coachAvatarText}>AI</Text>
-              </View>
-            ) : null}
             <View
               style={[
                 styles.messageBubble,
@@ -687,23 +1258,7 @@ function CoachScreen({
         ))}
         {loading ? <Text style={styles.footnote}>Coach is thinking...</Text> : null}
       </ScrollView>
-
       <View style={styles.chatComposerWrap}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.promptScroller}
-        >
-          {defaultQuickPrompts.map((prompt) => (
-            <Pressable
-              key={prompt}
-              style={({ pressed }) => [styles.promptChip, pressed && styles.pressed]}
-              onPress={() => onPrompt(prompt)}
-            >
-              <Text style={styles.promptChipText}>{prompt}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
         <View style={styles.chatInputRow}>
           <TextInput
             value={input}
@@ -728,87 +1283,6 @@ function CoachScreen({
         </View>
       </View>
     </View>
-  );
-}
-
-function ProfileScreen({
-  profile,
-  latestHealth,
-}: {
-  profile: UserProfile;
-  latestHealth: LatestHealthResponse | null;
-}) {
-  const directSignals = ["Sleep", "HRV", "Heart Rate", "Steps", "SpO2", "Temperature"];
-
-  return (
-    <ScrollView style={styles.content} contentContainerStyle={styles.screenContent}>
-      <Card style={styles.heroCard}>
-        <Text style={styles.cardTitle}>Study Details</Text>
-        <Text style={styles.cardBody}>
-          You are enrolled in the AI Health Coach research prototype. Your bracelet syncs to
-          the phone app and helps us study student stress, recovery, and daily coaching patterns.
-        </Text>
-        <Text style={styles.idBadge}>Participant ID #12345</Text>
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>{profile.name || "Your profile"}</Text>
-        <Text style={styles.cardBody}>
-          Goal: {profile.goals || "Improve overall wellness"}{"\n"}
-          Preferred movement: {profile.exerciseType || "Not set"}{"\n"}
-          Sleep target: {profile.sleepTime || "Not set"}{"\n"}
-          Stress context: {profile.workStress || "Not set"}
-        </Text>
-      </Card>
-
-      <SectionHeading title="Direct Signals" />
-      <Text style={styles.sectionBody}>Measurements collected directly from the wearable device.</Text>
-      <View style={styles.signalGrid}>
-        {directSignals.map((signal) => (
-          <View key={signal} style={styles.signalCard}>
-            <View style={styles.signalIcon}>
-              <Text style={styles.signalIconText}>{signal.slice(0, 2).toUpperCase()}</Text>
-            </View>
-            <Text style={styles.signalTitle}>{signal}</Text>
-            <Text style={styles.signalStatus}>Active</Text>
-          </View>
-        ))}
-      </View>
-
-      <SectionHeading title="Proxy Indicators" />
-      <Card style={styles.noticeCard}>
-        <Text style={styles.cardBody}>
-          Proxy indicators are estimated from direct signals. These are proxy indicators only,
-          not medical values, and should not be used for diagnosis.
-        </Text>
-      </Card>
-
-      <View style={styles.twoColumn}>
-        <ProxyDetailCard
-          title="Glucose proxy"
-          value={latestHealth?.latestDay.glucoseProxy ?? "Caution"}
-          body="Estimated from sleep, activity, and routine timing patterns."
-          color={palette.coral}
-        />
-        <ProxyDetailCard
-          title="Nitric oxide proxy"
-          value={latestHealth?.latestDay.nitricOxideProxy ?? "Could improve"}
-          body="Estimated cardiovascular support signal derived from movement and recovery context."
-          color={palette.blue}
-        />
-      </View>
-
-      <Card>
-        <Text style={styles.cardTitle}>Current ingestion model</Text>
-        <Text style={styles.cardBody}>
-          Bracelet data is stored on-device, synced over Bluetooth to the phone, normalized by
-          the app/backend, and then used by coaching plus the research dashboard.
-        </Text>
-        {latestHealth ? (
-          <Text style={styles.footnote}>Active scenario: {latestHealth.scenarioLabel}</Text>
-        ) : null}
-      </Card>
-    </ScrollView>
   );
 }
 
@@ -839,178 +1313,6 @@ function BottomTabs({
         );
       })}
     </View>
-  );
-}
-
-function SectionHeading({ title }: { title: string }) {
-  return <Text style={styles.sectionTitle}>{title}</Text>;
-}
-
-function MetricBentoCard({ metric, large }: { metric: HealthMetricCard; large?: boolean }) {
-  const progressWidth: DimensionValue =
-    metric.id === "recovery" ? (metric.value.replace("/100", "%") as DimensionValue) : "58%";
-
-  return (
-    <Card style={[styles.bentoCard, large && styles.bentoCardLarge]}>
-      <View style={styles.rowBetween}>
-        <Text style={[styles.metricInitial, { color: toneColor(metric.tone) }]}>
-          {metric.label.slice(0, 1)}
-        </Text>
-        <Text style={[styles.bentoValue, { color: toneColor(metric.tone) }]}>{metric.value}</Text>
-      </View>
-      <View>
-        <Text style={styles.metricLabel}>{metric.label}</Text>
-        <Text style={styles.cardBody}>{metric.context}</Text>
-      </View>
-      <View style={styles.progressTrack}>
-        <View
-          style={[
-            styles.progressFill,
-            {
-              backgroundColor: toneColor(metric.tone),
-              width: progressWidth,
-            },
-          ]}
-        />
-      </View>
-    </Card>
-  );
-}
-
-function ActionRow({ title, text }: { title: string; text: string }) {
-  return (
-    <View style={styles.actionRow}>
-      <View style={styles.checkbox} />
-      <View style={styles.actionCopy}>
-        <Text style={styles.actionTitle}>{title}</Text>
-        <Text style={styles.actionText}>{text}</Text>
-      </View>
-    </View>
-  );
-}
-
-function InsightCard({ insight }: { insight: HealthInsight }) {
-  return (
-    <Card style={[styles.insightCard, { borderColor: toneSoftColor(insight.tone) }]}>
-      <View style={[styles.accentDot, { backgroundColor: toneColor(insight.tone) }]} />
-      <Text style={styles.cardTitle}>{insight.title}</Text>
-      <Text style={styles.cardBody}>{insight.text}</Text>
-    </Card>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  context,
-  tone,
-}: {
-  label: string;
-  value: string;
-  context: string;
-  tone: "good" | "caution" | "alert" | "neutral";
-}) {
-  return (
-    <Card style={styles.statCard}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={[styles.footnote, { color: toneColor(tone) }]}>{context}</Text>
-    </Card>
-  );
-}
-
-function RingProgress({ percent }: { percent: number }) {
-  const clamped = Math.max(0, Math.min(1, percent));
-  return (
-    <View style={styles.ring}>
-      <Text style={styles.ringText}>{Math.round(clamped * 100)}%</Text>
-    </View>
-  );
-}
-
-function TrendBars({
-  points,
-  valueKey,
-  color,
-}: {
-  points: HealthTimelinePoint[];
-  valueKey: "recoveryScore" | "sleepScore" | "stressScore";
-  color: string;
-}) {
-  const max = Math.max(...points.map((point) => point[valueKey]), 100);
-
-  return (
-    <View style={styles.trendBars}>
-      {points.map((point) => {
-        const height = Math.max(8, (point[valueKey] / max) * 86);
-        return (
-          <View key={point.date} style={styles.trendDay}>
-            <View style={styles.trendTrack}>
-              <View style={[styles.trendFill, { height, backgroundColor: color }]} />
-            </View>
-            <Text style={styles.trendLabel}>
-              {new Date(`${point.date}T00:00:00`).toLocaleDateString("en-US", {
-                weekday: "narrow",
-              })}
-            </Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-function TimelinePointCard({ point }: { point: HealthTimelinePoint }) {
-  return (
-    <Card style={styles.timelineCard}>
-      <View style={styles.rowBetween}>
-        <View>
-          <Text style={styles.cardTitle}>{formatShortDate(point.date)}</Text>
-          <Text style={styles.footnote}>Mock bracelet sync day</Text>
-        </View>
-        <Text style={styles.hrvLabel}>HRV {point.hrv}</Text>
-      </View>
-      <View style={styles.proxyGrid}>
-        <MiniStat label="Recovery" value={`${point.recoveryScore}/100`} />
-        <MiniStat label="Sleep" value={`${point.sleepScore}/100`} />
-        <MiniStat label="Stress" value={`${point.stressScore}/100`} />
-      </View>
-      <Text style={styles.footnote}>{point.steps.toLocaleString()} steps</Text>
-    </Card>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.miniStat}>
-      <Text style={styles.miniStatLabel}>{label}</Text>
-      <Text style={styles.miniStatValue}>{value}</Text>
-    </View>
-  );
-}
-
-function ProxyDetailCard({
-  title,
-  value,
-  body,
-  color,
-}: {
-  title: string;
-  value: string;
-  body: string;
-  color: string;
-}) {
-  return (
-    <Card style={[styles.proxyDetail, { borderLeftColor: color }]}>
-      <View style={styles.rowBetween}>
-        <Text style={styles.cardTitle}>{title}</Text>
-        <Text style={[styles.proxyBadge, { color }]}>{value}</Text>
-      </View>
-      <Text style={styles.cardBody}>{body}</Text>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: "58%", backgroundColor: color }]} />
-      </View>
-    </Card>
   );
 }
 
@@ -1084,12 +1386,22 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   header: {
-    height: 64,
+    minHeight: 72,
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     backgroundColor: palette.canvas,
+    borderBottomColor: palette.line,
+    borderBottomWidth: 1,
+  },
+  headerLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    flex: 1,
+    gap: spacing.md,
+    minWidth: 0,
   },
   avatar: {
     width: 40,
@@ -1104,21 +1416,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
   },
-  headerCenter: {
-    alignItems: "center",
-  },
   headerTitle: {
     color: palette.sage,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
+    flexShrink: 1,
   },
   headerSubtitle: {
     color: palette.textFaint,
     fontSize: 11,
     marginTop: 2,
   },
+  activeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: palette.sage,
+  },
   iconButton: {
-    width: 40,
+    minWidth: 44,
     height: 40,
     borderRadius: radius.pill,
     alignItems: "center",
@@ -1126,6 +1448,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.line,
     backgroundColor: palette.surface,
+    paddingHorizontal: 10,
   },
   iconButtonText: {
     color: palette.sage,
@@ -1139,106 +1462,77 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     alignItems: "flex-start",
   },
-  heroCard: {
+  heroSection: {
     gap: spacing.md,
-    overflow: "hidden",
+    paddingTop: spacing.sm,
   },
-  ambientBlob: {
-    position: "absolute",
-    right: -54,
-    top: -54,
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    backgroundColor: palette.coralSoft,
-    opacity: 0.45,
+  scoreRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  statusPill: {
+    alignSelf: "flex-start",
+    backgroundColor: palette.sageSoft,
+    borderRadius: radius.pill,
+    color: palette.sage,
+    fontSize: 12,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    textTransform: "uppercase",
+  },
+  neutralPill: {
+    backgroundColor: palette.surfaceMuted,
+    color: palette.textMuted,
+  },
+  overallScore: {
+    color: palette.sage,
+    fontSize: 40,
+    fontWeight: "300",
+    lineHeight: 48,
   },
   heroTitle: {
     color: palette.text,
-    fontSize: 32,
-    fontWeight: "700",
-    letterSpacing: -0.6,
-    lineHeight: 38,
+    fontSize: 28,
+    fontWeight: "500",
+    lineHeight: 34,
   },
   heroBody: {
     color: palette.textMuted,
     fontSize: 16,
     lineHeight: 24,
   },
-  syncRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.pill,
-  },
   syncText: {
     color: palette.textMuted,
     fontSize: 13,
     fontWeight: "600",
   },
-  tagRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  insightGrid: {
     gap: spacing.sm,
   },
-  softTag: {
-    backgroundColor: palette.surfaceMuted,
+  insightBento: {
+    gap: spacing.sm,
+  },
+  metricIcon: {
+    width: 34,
+    height: 34,
     borderRadius: radius.pill,
-    color: palette.textMuted,
-    fontSize: 13,
-    fontWeight: "700",
-    overflow: "hidden",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.sageSoft,
   },
-  bentoGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.md,
+  metricIconText: {
+    color: palette.sage,
+    fontSize: 11,
+    fontWeight: "900",
   },
-  bentoCard: {
-    width: "47.8%",
-    minHeight: 162,
-    justifyContent: "space-between",
-  },
-  bentoCardLarge: {
-    width: "100%",
-    minHeight: 176,
-  },
-  rowBetween: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: spacing.md,
-  },
-  metricInitial: {
-    fontSize: 24,
+  insightTitle: {
+    color: palette.text,
+    fontSize: 16,
     fontWeight: "800",
-  },
-  bentoValue: {
-    fontSize: 24,
-    fontWeight: "800",
-  },
-  metricLabel: {
-    color: palette.textMuted,
-    fontSize: 13,
-    fontWeight: "800",
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-  },
-  progressTrack: {
-    height: 8,
-    borderRadius: radius.pill,
-    backgroundColor: palette.surfaceRaised,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    borderRadius: radius.pill,
+    lineHeight: 22,
   },
   sectionTitle: {
     color: palette.text,
@@ -1246,74 +1540,139 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 28,
   },
-  sectionBody: {
-    color: palette.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: -12,
-  },
   actionList: {
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   actionRow: {
+    alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.md,
-    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: palette.line,
+    borderRadius: radius.md,
+  },
+  actionRowChecked: {
+    backgroundColor: palette.surfaceMuted,
   },
   checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: radius.pill,
+    width: 28,
+    height: 28,
+    borderRadius: radius.sm,
     borderWidth: 1.5,
     borderColor: palette.outline,
+    alignItems: "center",
+    justifyContent: "center",
     marginTop: 2,
+  },
+  checkboxText: {
+    color: palette.textMuted,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  checkboxChecked: {
+    backgroundColor: palette.sage,
+    borderColor: palette.sage,
+  },
+  checkboxTextChecked: {
+    color: palette.surface,
+  },
+  checkedText: {
+    color: palette.textFaint,
+    textDecorationLine: "line-through",
   },
   actionCopy: {
     flex: 1,
-    gap: 4,
+    gap: 3,
+    minWidth: 0,
   },
   actionTitle: {
     color: palette.text,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
   },
   actionText: {
     color: palette.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  nudgeCard: {
+    gap: spacing.md,
+  },
+  nudgeRow: {
+    alignItems: "flex-start",
+    borderTopColor: palette.line,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingTop: spacing.md,
+  },
+  workoutCard: {
+    gap: 0,
+    overflow: "hidden",
+    padding: 0,
+  },
+  workoutVisual: {
+    height: 188,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.surfaceHigh,
+  },
+  workoutVisualText: {
+    color: palette.textMuted,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: spacing.sm,
+    textTransform: "uppercase",
+  },
+  playButton: {
+    width: 58,
+    height: 58,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.surface,
+  },
+  playButtonText: {
+    color: palette.sage,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  workoutCopy: {
+    gap: spacing.md,
+    padding: spacing.lg,
+  },
+  cueBox: {
+    gap: spacing.sm,
+    backgroundColor: palette.surfaceMuted,
+    borderColor: palette.line,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+  },
+  cueText: {
+    color: palette.textMuted,
     fontSize: 14,
     lineHeight: 20,
   },
-  insightCard: {
-    borderWidth: 1.5,
-    gap: spacing.sm,
+  label: {
+    color: palette.textFaint,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
   },
-  accentDot: {
-    width: 10,
-    height: 10,
-    borderRadius: radius.pill,
-  },
-  cardTitle: {
-    color: palette.text,
-    fontSize: 18,
-    fontWeight: "700",
-    lineHeight: 24,
-  },
-  cardBody: {
-    color: palette.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  proxyCard: {
-    gap: spacing.md,
-  },
-  proxyGrid: {
+  rawGrid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
   },
   miniStat: {
-    flex: 1,
+    flexBasis: "48%",
+    flexGrow: 1,
+    minWidth: 128,
     backgroundColor: palette.surfaceMuted,
     borderRadius: radius.md,
     padding: spacing.md,
@@ -1330,6 +1689,146 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     marginTop: 5,
+  },
+  diaryCard: {
+    gap: spacing.md,
+  },
+  diaryInputRow: {
+    alignItems: "center",
+    borderBottomColor: palette.line,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  diaryInput: {
+    flex: 1,
+    color: palette.text,
+    fontSize: 16,
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+  },
+  chipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  smallChip: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: palette.line,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  smallChipActive: {
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
+  },
+  smallChipText: {
+    color: palette.textMuted,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  smallChipTextActive: {
+    color: palette.sage,
+  },
+  micButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 42,
+    height: 42,
+    borderRadius: radius.pill,
+    backgroundColor: palette.surfaceMuted,
+    borderWidth: 1,
+    borderColor: palette.line,
+  },
+  micButtonActive: {
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
+  },
+  micButtonText: {
+    color: palette.textMuted,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  micButtonTextActive: {
+    color: palette.sage,
+  },
+  saveContextButton: {
+    borderRadius: radius.pill,
+    backgroundColor: palette.sage,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  saveContextText: {
+    color: palette.surface,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  toneWrap: {
+    gap: spacing.sm,
+  },
+  toneWrapCompact: {
+    marginTop: spacing.md,
+  },
+  toneSegment: {
+    flexDirection: "row",
+    gap: 4,
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radius.lg,
+    padding: 4,
+  },
+  toneButton: {
+    flex: 1,
+    alignItems: "center",
+    borderRadius: radius.md,
+    minHeight: 38,
+    justifyContent: "center",
+    paddingHorizontal: 5,
+    paddingVertical: 9,
+  },
+  toneButtonActive: {
+    backgroundColor: palette.surface,
+  },
+  toneText: {
+    color: palette.textMuted,
+    fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  toneTextActive: {
+    color: palette.sage,
+  },
+  strengthRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  strengthDots: {
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  strengthDot: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.surfaceMuted,
+    borderColor: palette.line,
+    borderWidth: 1,
+  },
+  strengthDotActive: {
+    backgroundColor: palette.sage,
+    borderColor: palette.sage,
+  },
+  strengthDotText: {
+    color: palette.textMuted,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  strengthDotTextActive: {
+    color: palette.surface,
   },
   scenarioWrap: {
     gap: spacing.sm,
@@ -1366,131 +1865,34 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: spacing.sm,
   },
-  floatingCoachButton: {
-    position: "absolute",
-    right: spacing.lg,
-    bottom: 104,
-    zIndex: 20,
-    alignItems: "center",
-    backgroundColor: palette.sage,
-    borderRadius: radius.pill,
-    flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    shadowColor: palette.shadow,
-    shadowOpacity: 1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
-  },
-  floatingCoachBadge: {
-    backgroundColor: palette.surface,
-    borderRadius: radius.pill,
-    color: palette.sage,
-    fontSize: 11,
-    fontWeight: "900",
-    overflow: "hidden",
-    paddingHorizontal: 7,
-    paddingVertical: 5,
-  },
-  floatingCoachText: {
-    color: palette.surface,
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  coachingInsight: {
-    alignItems: "center",
-    backgroundColor: palette.sageSoft,
-    gap: spacing.sm,
-  },
-  insightIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: palette.surface,
-  },
-  insightIconText: {
-    color: palette.sage,
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  summaryTitle: {
-    color: palette.text,
-    fontSize: 21,
-    fontWeight: "800",
-  },
-  twoColumn: {
-    flexDirection: "row",
+  weeklyFocus: {
+    backgroundColor: palette.surfaceMuted,
     gap: spacing.md,
   },
-  statCard: {
-    flex: 1,
-    gap: spacing.sm,
-  },
-  statValue: {
+  weeklyText: {
     color: palette.text,
-    fontSize: 31,
-    fontWeight: "800",
-    letterSpacing: -0.6,
+    fontSize: 16,
+    lineHeight: 24,
   },
-  stepsCard: {
+  trendCard: {
+    gap: spacing.md,
+  },
+  trendTitleRow: {
     alignItems: "center",
     flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  stepsValue: {
-    color: palette.text,
-    fontSize: 26,
-    fontWeight: "800",
-  },
-  stepsGoal: {
-    color: palette.textFaint,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  ring: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 7,
-    borderColor: palette.blue,
-    backgroundColor: palette.blueSoft,
-  },
-  ringText: {
-    color: palette.blue,
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  rangePill: {
-    backgroundColor: palette.surfaceMuted,
-    borderRadius: radius.pill,
-    color: palette.textMuted,
-    fontSize: 12,
-    fontWeight: "800",
-    overflow: "hidden",
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    gap: spacing.sm,
+    flex: 1,
+    minWidth: 0,
   },
   trendBars: {
-    height: 132,
+    height: 92,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "flex-end",
-    marginTop: spacing.lg,
-  },
-  trendDay: {
-    alignItems: "center",
-    flex: 1,
-    gap: spacing.sm,
+    gap: 8,
   },
   trendTrack: {
-    width: 9,
-    height: 92,
+    flex: 1,
+    height: 82,
     borderRadius: radius.pill,
     backgroundColor: palette.surfaceRaised,
     justifyContent: "flex-end",
@@ -1499,19 +1901,144 @@ const styles = StyleSheet.create({
   trendFill: {
     width: "100%",
     borderRadius: radius.pill,
+    backgroundColor: palette.sage,
   },
-  trendLabel: {
-    color: palette.textFaint,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  timelineCard: {
+  coachTake: {
     gap: spacing.sm,
+    backgroundColor: palette.surfaceMuted,
   },
-  hrvLabel: {
+  correlationCard: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  libraryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  libraryThumb: {
+    width: 58,
+    height: 58,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.surfaceMuted,
+  },
+  libraryIcon: {
     color: palette.sage,
     fontSize: 13,
+    fontWeight: "900",
+  },
+  smallPlay: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: palette.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  smallPlayText: {
+    color: palette.sage,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  profileHeader: {
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  profileAvatar: {
+    width: 96,
+    height: 96,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.sageSoft,
+  },
+  profileAvatarText: {
+    color: palette.sage,
+    fontSize: 34,
+    fontWeight: "900",
+  },
+  profileName: {
+    color: palette.text,
+    fontSize: 24,
     fontWeight: "800",
+    textAlign: "center",
+  },
+  personalityPreview: {
+    backgroundColor: palette.surfaceMuted,
+    borderColor: palette.line,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    color: palette.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: spacing.md,
+    padding: spacing.md,
+  },
+  settingRow: {
+    alignItems: "center",
+    borderTopColor: palette.line,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+  },
+  toggleOn: {
+    width: 48,
+    height: 26,
+    borderRadius: radius.pill,
+    backgroundColor: palette.sage,
+    justifyContent: "center",
+    alignItems: "flex-end",
+    paddingHorizontal: 4,
+  },
+  toggleKnob: {
+    width: 18,
+    height: 18,
+    borderRadius: radius.pill,
+    backgroundColor: palette.surface,
+  },
+  deviceRow: {
+    alignItems: "center",
+    borderTopColor: palette.line,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    minWidth: 0,
+  },
+  linkList: {
+    paddingVertical: 0,
+  },
+  linkRow: {
+    alignItems: "center",
+    borderBottomColor: palette.line,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: spacing.md,
+  },
+  rowBetween: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    minWidth: 0,
+  },
+  cardTitle: {
+    color: palette.text,
+    fontSize: 18,
+    fontWeight: "700",
+    lineHeight: 24,
+  },
+  cardBody: {
+    color: palette.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
   },
   coachScreen: {
     flex: 1,
@@ -1520,14 +2047,8 @@ const styles = StyleSheet.create({
   chatContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: 232,
+    paddingBottom: 132,
     gap: spacing.lg,
-  },
-  chatTimestamp: {
-    color: palette.textFaint,
-    fontSize: 12,
-    fontWeight: "800",
-    textAlign: "center",
   },
   messageRow: {
     flexDirection: "row",
@@ -1539,20 +2060,6 @@ const styles = StyleSheet.create({
   },
   messageRowUser: {
     alignSelf: "flex-end",
-  },
-  coachAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: palette.sageSoft,
-    marginTop: 4,
-  },
-  coachAvatarText: {
-    color: palette.sage,
-    fontSize: 11,
-    fontWeight: "900",
   },
   messageBubble: {
     borderRadius: 18,
@@ -1580,32 +2087,10 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   chatComposerWrap: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 86,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     backgroundColor: palette.canvas,
-    gap: spacing.sm,
-  },
-  promptScroller: {
-    gap: spacing.sm,
-    paddingRight: spacing.lg,
-  },
-  promptChip: {
-    backgroundColor: palette.surfaceMuted,
-    borderColor: palette.line,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  promptChipText: {
-    color: palette.textMuted,
-    fontSize: 13,
-    fontWeight: "700",
   },
   chatInputRow: {
     alignItems: "center",
@@ -1638,69 +2123,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
   },
-  idBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: palette.surfaceMuted,
-    borderRadius: radius.pill,
-    color: palette.textMuted,
-    fontSize: 13,
-    fontWeight: "800",
-    marginTop: spacing.md,
-    overflow: "hidden",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  signalGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.md,
-  },
-  signalCard: {
-    width: "47.8%",
-    alignItems: "center",
-    backgroundColor: palette.surface,
-    borderColor: palette.line,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  signalIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: palette.blueSoft,
-  },
-  signalIconText: {
-    color: palette.blue,
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  signalTitle: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  signalStatus: {
-    color: palette.sage,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  noticeCard: {
-    backgroundColor: palette.surfaceMuted,
-  },
-  proxyDetail: {
-    flex: 1,
-    borderLeftWidth: 4,
-    gap: spacing.md,
-  },
-  proxyBadge: {
-    fontSize: 12,
-    fontWeight: "900",
-  },
   tabBar: {
     position: "absolute",
     bottom: 0,
@@ -1711,10 +2133,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingTop: 10,
     paddingBottom: 24,
-    paddingHorizontal: spacing.md,
-    backgroundColor: palette.surfaceMuted,
+    paddingHorizontal: spacing.xs,
+    backgroundColor: palette.surface,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,
+    borderTopColor: palette.line,
+    borderTopWidth: 1,
     shadowColor: palette.shadow,
     shadowOpacity: 1,
     shadowRadius: 18,
@@ -1724,8 +2148,10 @@ const styles = StyleSheet.create({
   tabItem: {
     alignItems: "center",
     borderRadius: radius.pill,
-    minWidth: 70,
-    paddingHorizontal: 12,
+    flex: 1,
+    minWidth: 0,
+    marginHorizontal: 2,
+    paddingHorizontal: 6,
     paddingVertical: 7,
   },
   tabItemActive: {
@@ -1733,17 +2159,19 @@ const styles = StyleSheet.create({
   },
   tabGlyph: {
     color: palette.textMuted,
-    fontSize: 14,
+    fontSize: 10,
     fontWeight: "900",
     marginBottom: 2,
+    textTransform: "uppercase",
   },
   tabGlyphActive: {
     color: palette.sage,
   },
   tabText: {
     color: palette.textMuted,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
+    textAlign: "center",
   },
   tabTextActive: {
     color: palette.sage,

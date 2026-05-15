@@ -1,4 +1,4 @@
-export type TabKey = "today" | "progress" | "coach" | "you";
+export type TabKey = "today" | "insights" | "workouts" | "profile";
 
 export type MetricStatus =
   | "Good"
@@ -28,6 +28,77 @@ export interface UserProfile {
   sleepTime: string;
   caffeine: string;
   workStress: string;
+}
+
+export type CoachToneMode = "gentle" | "direct" | "hype" | "nice" | "unhinged";
+
+export interface CoachScore {
+  id: string;
+  label: string;
+  score: number;
+  status: string;
+  explanation: string;
+}
+
+export interface CoachTask {
+  id: string;
+  title: string;
+  detail: string;
+  category: "hydration" | "breath" | "movement" | "sleep" | "nutrition" | "recovery";
+}
+
+export interface CoachAlert {
+  id: string;
+  title: string;
+  detail: string;
+  subtle: boolean;
+}
+
+export interface CoachWorkout {
+  id: string;
+  title: string;
+  label: string;
+  duration: string;
+  why: string;
+  cues: string[];
+  mediaPrompt: string;
+}
+
+export interface CoachTrendInsight {
+  id: string;
+  title: string;
+  status: string;
+  explanation: string;
+  values: number[];
+}
+
+export interface CoachCorrelation {
+  id: string;
+  title: string;
+  explanation: string;
+}
+
+export interface CoachPlanResponse {
+  headline: string;
+  summary: string;
+  status: string;
+  overallScore: number;
+  categoryScores: CoachScore[];
+  cards: CoachScore[];
+  tasks: CoachTask[];
+  alerts: CoachAlert[];
+  workoutOfTheDay: CoachWorkout;
+  trendInsights: CoachTrendInsight[];
+  correlations: CoachCorrelation[];
+  coachTone: CoachToneMode;
+  personalityStrength: number;
+}
+
+export interface DiaryEntry {
+  id: string;
+  text: string;
+  tags: string[];
+  createdAt: string;
 }
 
 export interface MetricAction {

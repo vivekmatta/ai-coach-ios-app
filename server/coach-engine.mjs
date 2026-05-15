@@ -220,6 +220,341 @@ function buildMetricCards(day) {
   ];
 }
 
+function clampScore(score) {
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function scoreStatus(score, inverse = false) {
+  const normalized = inverse ? 100 - score : score;
+  if (normalized >= 80) {
+    return "Optimized";
+  }
+  if (normalized >= 65) {
+    return "Steady";
+  }
+  if (normalized >= 50) {
+    return "Needs attention";
+  }
+  return "Reset day";
+}
+
+function buildCoachTasks(day) {
+  const tasks = [
+    {
+      id: "hydrate",
+      title: "Hydrate",
+      detail: "Drink water early and keep it steady before the afternoon slump hits.",
+      category: "hydration",
+    },
+    {
+      id: "breathe",
+      title: "Breathe",
+      detail:
+        day.stress.score >= 60
+          ? "Take five slow minutes now to downshift your stress signal."
+          : "Use one short breathing reset to keep the calm trend intact.",
+      category: "breath",
+    },
+    {
+      id: "stand",
+      title: "Stand",
+      detail: "Break up long sitting blocks so movement supports recovery instead of becoming another workout.",
+      category: "movement",
+    },
+    {
+      id: "walk",
+      title: "Walk",
+      detail:
+        day.recovery.score < 50
+          ? "Keep it easy; a short walk is enough stimulus for today."
+          : "Use a brisk walk to lock in energy without draining the system.",
+      category: "movement",
+    },
+    {
+      id: "wind-down",
+      title: "Wind down",
+      detail: "Protect the last 45 minutes before bed so sleep can do the heavy lifting tonight.",
+      category: "sleep",
+    },
+  ];
+
+  if (day.mealTiming.lateMeal) {
+    tasks.splice(4, 0, {
+      id: "eat-earlier",
+      title: "Eat earlier",
+      detail: "Move dinner earlier tonight; late fuel is likely part of the recovery drift.",
+      category: "nutrition",
+    });
+  }
+
+  return tasks.slice(0, 6);
+}
+
+function buildCoachAlerts(day) {
+  const alerts = [
+    {
+      id: "water",
+      title: "Time for water",
+      detail: "A quiet hydration nudge helps the plan work without adding another task to remember.",
+      subtle: true,
+    },
+  ];
+
+  if (day.stress.score >= 60) {
+    alerts.push({
+      id: "breath",
+      title: "Take a deep breath",
+      detail: "Stress is high enough that a two-minute reset is worth doing before the day stacks up.",
+      subtle: true,
+    });
+  }
+
+  if (day.steps.count < day.steps.goal * 0.55) {
+    alerts.push({
+      id: "stand",
+      title: "Stand up",
+      detail: "Movement is behind pace, so a short standing break is the lowest-friction win.",
+      subtle: true,
+    });
+  }
+
+  if (day.sleep.score < 70) {
+    alerts.push({
+      id: "sleep",
+      title: "Start wind-down early",
+      detail: "Sleep is the biggest lever tonight; start earlier instead of trying to fix it at bedtime.",
+      subtle: true,
+    });
+  }
+
+  return alerts.slice(0, 4);
+}
+
+function buildWorkoutOfTheDay(day, profile = {}) {
+  if (day.recovery.score < 50 || day.stress.score >= 70) {
+    return {
+      id: "box-breathing-squat-hold",
+      title: "Supported squat hold",
+      label: "Recovery",
+      duration: "8 min",
+      why: "Your recovery is low, so this gives you circulation, mobility, and a reset without turning today into a hard session.",
+      cues: [
+        "Keep your feet flat and chest tall.",
+        "Breathe slowly for four counts in and six counts out.",
+        "Stop before it feels like a workout.",
+      ],
+      mediaPrompt:
+        "10 second clean loop of a trainer demonstrating a supported bodyweight squat hold in a bright minimalist studio, calm premium wellness style.",
+    };
+  }
+
+  const prefersStrength = /lift|strength|gym|weights/i.test(profile.exerciseType || profile.goals || "");
+  if (prefersStrength) {
+    return {
+      id: "tempo-push-up",
+      title: "Tempo push-up",
+      label: "Strength",
+      duration: "10 min",
+      why: "Recovery gives you room for controlled strength work, and this balances push strength without needing equipment.",
+      cues: [
+        "Lower for three seconds.",
+        "Keep ribs tucked and neck long.",
+        "Leave two good reps in reserve.",
+      ],
+      mediaPrompt:
+        "10 second clean loop of a trainer demonstrating a slow tempo push-up on a mat in a bright minimalist gym, premium health app style.",
+    };
+  }
+
+  return {
+    id: "interval-walk",
+    title: "Walk-run pickups",
+    label: "Interval",
+    duration: "12 min",
+    why: "Your signals support some intensity, but short pickups keep it productive instead of draining.",
+    cues: [
+      "Warm up for three easy minutes.",
+      "Alternate 30 seconds quick with 90 seconds easy.",
+      "Finish feeling better than when you started.",
+    ],
+    mediaPrompt:
+      "10 second clean loop of a runner doing relaxed track pickups on a soft morning, premium calm fitness app style.",
+  };
+}
+
+function normalizedStrength(strength) {
+  return Math.max(1, Math.min(5, Math.round(Number(strength) || 3)));
+}
+
+function tonePrefix(tone, strength = 3) {
+  const level = normalizedStrength(strength);
+  if (tone === "hype") {
+    return level >= 4
+      ? "Lock in: you have a clean shot at a strong day."
+      : "You have a clean shot at a strong day.";
+  }
+  if (tone === "direct") {
+    return level >= 4 ? "Here is the move today, no fluff." : "Here is the move today.";
+  }
+  if (tone === "nice") {
+    return level >= 4
+      ? "You are not off track; today just needs a kind reset and a little structure."
+      : "You are doing enough; today just needs a little structure.";
+  }
+  if (tone === "unhinged") {
+    if (level >= 5) {
+      return "Alright, chaos mode: we are not raw-dogging this day on shaky signals, so here is the damn plan.";
+    }
+    if (level >= 3) {
+      return "Tiny chaos, useful plan: we are steering the ship before the day steals the wheel.";
+    }
+    return "Slightly chaotic but useful: here is the plan before the day gets weird.";
+  }
+  return level >= 4
+    ? "Keep this very simple and very kind to your system."
+    : "Keep this simple and kind to your system.";
+}
+
+export function buildStructuredCoachPlan(
+  state,
+  { profile = {}, tone = "gentle", personalityStrength = 3, diaryEntries = [] } = {}
+) {
+  const days = state.days;
+  const latestDay = days[days.length - 1];
+  const strength = normalizedStrength(personalityStrength);
+  const priorDays = days.slice(Math.max(0, days.length - 7), days.length);
+  const movementScore = clampScore((latestDay.steps.count / latestDay.steps.goal) * 100);
+  const stressScore = clampScore(100 - latestDay.stress.score);
+  const diaryHasLateMeal = diaryEntries.some((entry) => /late|ate late|dinner/i.test(`${entry.text} ${entry.tags?.join(" ")}`));
+  const routineScore = diaryHasLateMeal || latestDay.mealTiming.lateMeal ? 52 : 68;
+  const overallScore = clampScore(
+    latestDay.recovery.score * 0.3 +
+      latestDay.sleep.score * 0.25 +
+      stressScore * 0.2 +
+      movementScore * 0.15 +
+      routineScore * 0.1
+  );
+
+  const status = scoreStatus(overallScore);
+  const categoryScores = [
+    {
+      id: "recovery",
+      label: "Recovery",
+      score: latestDay.recovery.score,
+      status: scoreStatus(latestDay.recovery.score),
+      explanation:
+        latestDay.recovery.score < 55
+          ? "Your recovery is asking for a lighter day. The win is to preserve rhythm instead of forcing intensity."
+          : "Your recovery gives you room to train, but the coach still wants clean execution over max effort.",
+    },
+    {
+      id: "sleep",
+      label: "Sleep",
+      score: latestDay.sleep.score,
+      status: scoreStatus(latestDay.sleep.score),
+      explanation:
+        latestDay.sleep.score < 70
+          ? "Sleep is the biggest lever tonight. Start winding down earlier so tomorrow is easier to coach."
+          : "Sleep is supporting the rest of your health stack. Keep the evening routine boring and repeatable.",
+    },
+    {
+      id: "stress",
+      label: "Stress",
+      score: stressScore,
+      status: scoreStatus(stressScore),
+      explanation:
+        latestDay.stress.score >= 60
+          ? "Stress is loud enough to change the plan. Use a breathing reset and lower the training load."
+          : "Stress is not the limiting factor right now. Keep breaks and daylight in the day so it stays that way.",
+    },
+    {
+      id: "movement",
+      label: "Movement",
+      score: movementScore,
+      status: scoreStatus(movementScore),
+      explanation:
+        movementScore < 60
+          ? "Movement is behind pace, but you do not need a huge workout. A few short walks will move the needle."
+          : "Movement is doing its job. Keep it steady and avoid adding extra intensity just because the number looks good.",
+    },
+    {
+      id: "routine",
+      label: "Nutrition + routine",
+      score: routineScore,
+      status: scoreStatus(routineScore),
+      explanation:
+        routineScore < 60
+          ? "Late food or routine drift is probably affecting recovery. Eat earlier and make the evening simpler."
+          : "Your routine context looks stable enough. Keep meals predictable and hydration front-loaded.",
+    },
+  ];
+
+  const recoveryValues = priorDays.map((day) => day.recovery.score);
+  const sleepValues = priorDays.map((day) => day.sleep.score);
+  const stressValues = priorDays.map((day) => 100 - day.stress.score);
+
+  return {
+    headline: buildHeadline(latestDay),
+    summary: `${tonePrefix(tone, strength)} ${buildSummary(latestDay)}`,
+    status,
+    overallScore,
+    categoryScores,
+    cards: categoryScores.slice(0, 3),
+    tasks: buildCoachTasks(latestDay),
+    alerts: buildCoachAlerts(latestDay),
+    workoutOfTheDay: buildWorkoutOfTheDay(latestDay, profile),
+    trendInsights: [
+      {
+        id: "sleep",
+        title: "Restorative sleep",
+        status: sleepValues[sleepValues.length - 1] >= sleepValues[0] ? "Improving" : "Drifting",
+        explanation:
+          latestDay.sleep.score < 70
+            ? "Sleep is not fully restoring you yet, so the coach is protecting tonight's wind-down window."
+            : "Sleep is becoming a stronger base for recovery, which makes the rest of the plan easier.",
+        values: sleepValues,
+      },
+      {
+        id: "movement",
+        title: "Movement load",
+        status: movementScore >= 75 ? "On pace" : "Light",
+        explanation:
+          movementScore >= 75
+            ? "Movement volume is solid, so the plan avoids adding unnecessary load."
+            : "Movement is light enough that short walks will help without competing with recovery.",
+        values: priorDays.map((day) => clampScore((day.steps.count / day.steps.goal) * 100)),
+      },
+      {
+        id: "recovery",
+        title: "System recovery",
+        status: recoveryValues[recoveryValues.length - 1] >= recoveryValues[0] ? "Rebuilding" : "Needs reset",
+        explanation:
+          latestDay.recovery.score < 55
+            ? "Recovery is still the limiter, so today's coaching is conservative on purpose."
+            : "Recovery is trending well enough to support a controlled training stimulus.",
+        values: recoveryValues,
+      },
+    ],
+    correlations: [
+      {
+        id: "late-meals",
+        title: "Late meals",
+        explanation:
+          latestDay.mealTiming.lateMeal || diaryHasLateMeal
+            ? "Late eating is lining up with worse overnight recovery, so the coach is moving dinner earlier."
+            : "Earlier meals appear to support steadier sleep and better morning readiness.",
+      },
+      {
+        id: "morning-light",
+        title: "Morning sunlight",
+        explanation: "Days with daylight and short walks are better candidates for stable afternoon energy.",
+      },
+    ],
+    coachTone: tone,
+    personalityStrength: strength,
+  };
+}
+
 export function buildDailyBrief(state, { availableFixtures = [] } = {}) {
   const days = state.days;
   const latestDay = days[days.length - 1];

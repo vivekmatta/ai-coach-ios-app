@@ -26,14 +26,15 @@ Current local flow:
 - run the local Node server
 - open the Expo app
 - switch between built-in mock sync scenarios from the `Today` screen
-- inspect the daily brief and 7-day trend surfaces
+- inspect the AI-generated daily plan, checklist, workout recommendation, nudges, and insights
 
-Optional AI chat integration:
+Optional AI integration:
 - either put the Google service account file at `secrets/google-service-account.json`
 - or create `.env` from `.env.example` and set `GEMINI_API_KEY`
 - run `npm run server`
 - the `Coach` chat endpoint will use the configured AI provider
-- daily brief and plan endpoints stay deterministic for now
+- the structured `Coach` plan endpoint uses the configured AI provider when available
+- if AI is unavailable, the app falls back to deterministic local coaching output
 
 The mobile client does not read credentials directly. The local proxy server reads the secret server-side.
 
@@ -69,6 +70,8 @@ The mobile app is an iPhone-first research prototype for a screenless wearable c
 
 - action-first daily coaching
 - insight-first health summaries instead of raw metric overload
+- AI-generated daily plans that combine mock biometrics, profile goals, diary context, and coach personality
+- coach personality modes with adjustable strength: Gentle, Direct, Hype, Nice, and Unhinged
 - proxy signals for glucose and nitric oxide
 - contextual health guidance across recovery, sleep, stress, movement, and environment
 - a mock-sync-first pipeline that mirrors the expected SDK data flow before the watch hardware arrives
@@ -102,10 +105,10 @@ research-dashboard/
 ## Screens
 
 Mobile:
-- `Today` for the latest synced mock wearable summary, key insights, and action plan
-- `Progress` for the 7-day trend view
-- `Coach` for AI coach chat
-- `Profile` for study details and research-facing signal explanations
+- `Today` for the AI daily plan, total score, short insight cards, checklist, nudges, workout, diary context, and raw-number details
+- `Insights` for weekly focus, trend explanations, pattern snapshot, and observed correlations
+- `Workouts` for the AI-selected workout of the day, coaching cues, media prompt, and small workout library
+- `Profile` for coach personality, personality strength, notification settings, connected devices, and profile context
 
 Web dashboard:
 - cohort overview
@@ -126,7 +129,7 @@ Web dashboard:
 
 ## Design
 
-The UI uses a light, white-first visual system with warm neutrals and calm accent colors. The goal is a clean, modern, user-friendly mobile experience that feels more like a thoughtful coach than a dense analytics dashboard.
+The UI uses a light, white-first visual system with warm neutrals and calm accent colors. The goal is a clean, modern, user-friendly mobile experience that feels more like a thoughtful coach than a dense analytics dashboard. Raw metrics remain available, but the first screen prioritizes plain-language coaching, tasks, and the meaning of the data.
 
 ## Mock Sync Endpoints
 
@@ -136,6 +139,26 @@ The local server now exposes:
 - `GET /health-data/timeline`
 - `POST /health-data/import-mock`
 - `POST /coach/daily-brief`
+- `POST /coach/plan`
+
+`POST /coach/plan` supports a structured mode used by the mobile app. It combines mock health data, profile goals, diary entries, coach personality, and personality strength into:
+
+- an overall score and status
+- 1-2 sentence insight cards
+- checkable daily tasks
+- subtle in-app notification copy
+- one workout recommendation with cues and a cached-media prompt
+- trend and correlation explanations
+
+Supported coach personalities:
+
+- `gentle`
+- `direct`
+- `hype`
+- `nice`
+- `unhinged`
+
+Personality strength is stored locally from `1` to `5`. The `unhinged` mode is opt-in adult copy and may include profanity, but all modes keep the same health-safety rules: no diagnosis, no shame, and no unsafe workout or nutrition guidance.
 
 Built-in fixtures:
 
