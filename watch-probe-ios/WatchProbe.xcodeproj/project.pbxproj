@@ -1,0 +1,456 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		2A0000012C00000000000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000022C00000000000001 /* AppDelegate.swift */; };
+		2A0000032C00000000000001 /* ProbeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000042C00000000000001 /* ProbeViewController.swift */; };
+		2A0000702C00000000000001 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000712C00000000000001 /* SceneDelegate.swift */; };
+		2A0000722C00000000000001 /* WatchResearchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000732C00000000000001 /* WatchResearchStore.swift */; };
+		2A0000742C00000000000001 /* WatchProbeDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000752C00000000000001 /* WatchProbeDashboardView.swift */; };
+		2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000062C00000000000001 /* VeepooBleSDK.framework */; };
+		2A0000302C00000000000001 /* ABParTool.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000202C00000000000001 /* ABParTool.framework */; };
+		2A0000312C00000000000001 /* JLDialUnit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000212C00000000000001 /* JLDialUnit.framework */; };
+		2A0000322C00000000000001 /* JL_BLEKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000222C00000000000001 /* JL_BLEKit.framework */; };
+		2A0000332C00000000000001 /* ZipZap.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000232C00000000000001 /* ZipZap.framework */; };
+		2A0000342C00000000000001 /* ABParTool.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000202C00000000000001 /* ABParTool.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		2A0000352C00000000000001 /* JLDialUnit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000212C00000000000001 /* JLDialUnit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		2A0000372C00000000000001 /* ZipZap.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000232C00000000000001 /* ZipZap.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		2A0000502C00000000000001 /* FMDatabase.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000402C00000000000001 /* FMDatabase.m */; };
+		2A0000512C00000000000001 /* FMDatabaseAdditions.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000412C00000000000001 /* FMDatabaseAdditions.m */; };
+		2A0000522C00000000000001 /* FMDatabasePool.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000422C00000000000001 /* FMDatabasePool.m */; };
+		2A0000532C00000000000001 /* FMDatabaseQueue.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000432C00000000000001 /* FMDatabaseQueue.m */; };
+		2A0000542C00000000000001 /* FMResultSet.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000442C00000000000001 /* FMResultSet.m */; };
+		2A0000552C00000000000001 /* MJExtensionConst.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000452C00000000000001 /* MJExtensionConst.m */; };
+		2A0000562C00000000000001 /* MJFoundation.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000462C00000000000001 /* MJFoundation.m */; };
+		2A0000572C00000000000001 /* MJProperty.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000472C00000000000001 /* MJProperty.m */; };
+		2A0000582C00000000000001 /* MJPropertyKey.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000482C00000000000001 /* MJPropertyKey.m */; };
+		2A0000592C00000000000001 /* MJPropertyType.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000492C00000000000001 /* MJPropertyType.m */; };
+		2A00005A2C00000000000001 /* NSObject+MJClass.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A00004A2C00000000000001 /* NSObject+MJClass.m */; };
+		2A00005B2C00000000000001 /* NSObject+MJCoding.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A00004B2C00000000000001 /* NSObject+MJCoding.m */; };
+		2A00005C2C00000000000001 /* NSObject+MJKeyValue.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A00004C2C00000000000001 /* NSObject+MJKeyValue.m */; };
+		2A00005D2C00000000000001 /* NSObject+MJProperty.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A00004D2C00000000000001 /* NSObject+MJProperty.m */; };
+		2A00005E2C00000000000001 /* NSString+MJExtension.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A00004E2C00000000000001 /* NSString+MJExtension.m */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2A0000082C00000000000001 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				2A0000342C00000000000001 /* ABParTool.framework in Embed Frameworks */,
+				2A0000352C00000000000001 /* JLDialUnit.framework in Embed Frameworks */,
+				2A0000372C00000000000001 /* ZipZap.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		2A0000022C00000000000001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		2A0000042C00000000000001 /* ProbeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProbeViewController.swift; sourceTree = "<group>"; };
+		2A0000712C00000000000001 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		2A0000732C00000000000001 /* WatchResearchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchResearchStore.swift; sourceTree = "<group>"; };
+		2A0000752C00000000000001 /* WatchProbeDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchProbeDashboardView.swift; sourceTree = "<group>"; };
+		2A0000062C00000000000001 /* VeepooBleSDK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = VeepooBleSDK.framework; sourceTree = "<group>"; };
+		2A0000092C00000000000001 /* WatchProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2A00000A2C00000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		2A00000B2C00000000000001 /* WatchProbe-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "WatchProbe-Bridging-Header.h"; sourceTree = "<group>"; };
+		2A0000202C00000000000001 /* ABParTool.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = ABParTool.framework; sourceTree = "<group>"; };
+		2A0000212C00000000000001 /* JLDialUnit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = JLDialUnit.framework; sourceTree = "<group>"; };
+		2A0000222C00000000000001 /* JL_BLEKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = JL_BLEKit.framework; sourceTree = "<group>"; };
+		2A0000232C00000000000001 /* ZipZap.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = ZipZap.framework; sourceTree = "<group>"; };
+		2A0000402C00000000000001 /* FMDatabase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FMDatabase.m; sourceTree = "<group>"; };
+		2A0000412C00000000000001 /* FMDatabaseAdditions.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FMDatabaseAdditions.m; sourceTree = "<group>"; };
+		2A0000422C00000000000001 /* FMDatabasePool.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FMDatabasePool.m; sourceTree = "<group>"; };
+		2A0000432C00000000000001 /* FMDatabaseQueue.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FMDatabaseQueue.m; sourceTree = "<group>"; };
+		2A0000442C00000000000001 /* FMResultSet.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FMResultSet.m; sourceTree = "<group>"; };
+		2A0000452C00000000000001 /* MJExtensionConst.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MJExtensionConst.m; sourceTree = "<group>"; };
+		2A0000462C00000000000001 /* MJFoundation.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MJFoundation.m; sourceTree = "<group>"; };
+		2A0000472C00000000000001 /* MJProperty.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MJProperty.m; sourceTree = "<group>"; };
+		2A0000482C00000000000001 /* MJPropertyKey.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MJPropertyKey.m; sourceTree = "<group>"; };
+		2A0000492C00000000000001 /* MJPropertyType.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MJPropertyType.m; sourceTree = "<group>"; };
+		2A00004A2C00000000000001 /* NSObject+MJClass.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSObject+MJClass.m"; sourceTree = "<group>"; };
+		2A00004B2C00000000000001 /* NSObject+MJCoding.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSObject+MJCoding.m"; sourceTree = "<group>"; };
+		2A00004C2C00000000000001 /* NSObject+MJKeyValue.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSObject+MJKeyValue.m"; sourceTree = "<group>"; };
+		2A00004D2C00000000000001 /* NSObject+MJProperty.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSObject+MJProperty.m"; sourceTree = "<group>"; };
+		2A00004E2C00000000000001 /* NSString+MJExtension.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSString+MJExtension.m"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		2A00000C2C00000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */,
+				2A0000302C00000000000001 /* ABParTool.framework in Frameworks */,
+				2A0000312C00000000000001 /* JLDialUnit.framework in Frameworks */,
+				2A0000322C00000000000001 /* JL_BLEKit.framework in Frameworks */,
+				2A0000332C00000000000001 /* ZipZap.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		2A00000D2C00000000000001 = {
+			isa = PBXGroup;
+			children = (
+				2A00000E2C00000000000001 /* WatchProbe */,
+				2A00000F2C00000000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		2A00000E2C00000000000001 /* WatchProbe */ = {
+			isa = PBXGroup;
+			children = (
+				2A0000022C00000000000001 /* AppDelegate.swift */,
+				2A0000712C00000000000001 /* SceneDelegate.swift */,
+				2A0000042C00000000000001 /* ProbeViewController.swift */,
+				2A0000732C00000000000001 /* WatchResearchStore.swift */,
+				2A0000752C00000000000001 /* WatchProbeDashboardView.swift */,
+				2A00000B2C00000000000001 /* WatchProbe-Bridging-Header.h */,
+				2A00000A2C00000000000001 /* Info.plist */,
+				2A0000062C00000000000001 /* VeepooBleSDK.framework */,
+				2A0000202C00000000000001 /* ABParTool.framework */,
+				2A0000212C00000000000001 /* JLDialUnit.framework */,
+				2A0000222C00000000000001 /* JL_BLEKit.framework */,
+				2A0000232C00000000000001 /* ZipZap.framework */,
+				2A0000602C00000000000001 /* ThirdParty */,
+			);
+			path = WatchProbe;
+			sourceTree = "<group>";
+		};
+		2A00000F2C00000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2A0000092C00000000000001 /* WatchProbe.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2A0000602C00000000000001 /* ThirdParty */ = {
+			isa = PBXGroup;
+			children = (
+				2A0000612C00000000000001 /* FMDB */,
+				2A0000622C00000000000001 /* MJExtension */,
+			);
+			path = ThirdParty;
+			sourceTree = "<group>";
+		};
+		2A0000612C00000000000001 /* FMDB */ = {
+			isa = PBXGroup;
+			children = (
+				2A0000402C00000000000001 /* FMDatabase.m */,
+				2A0000412C00000000000001 /* FMDatabaseAdditions.m */,
+				2A0000422C00000000000001 /* FMDatabasePool.m */,
+				2A0000432C00000000000001 /* FMDatabaseQueue.m */,
+				2A0000442C00000000000001 /* FMResultSet.m */,
+			);
+			path = FMDB;
+			sourceTree = "<group>";
+		};
+		2A0000622C00000000000001 /* MJExtension */ = {
+			isa = PBXGroup;
+			children = (
+				2A0000452C00000000000001 /* MJExtensionConst.m */,
+				2A0000462C00000000000001 /* MJFoundation.m */,
+				2A0000472C00000000000001 /* MJProperty.m */,
+				2A0000482C00000000000001 /* MJPropertyKey.m */,
+				2A0000492C00000000000001 /* MJPropertyType.m */,
+				2A00004A2C00000000000001 /* NSObject+MJClass.m */,
+				2A00004B2C00000000000001 /* NSObject+MJCoding.m */,
+				2A00004C2C00000000000001 /* NSObject+MJKeyValue.m */,
+				2A00004D2C00000000000001 /* NSObject+MJProperty.m */,
+				2A00004E2C00000000000001 /* NSString+MJExtension.m */,
+			);
+			path = MJExtension;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2A0000102C00000000000001 /* WatchProbe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2A0000112C00000000000001 /* Build configuration list for PBXNativeTarget "WatchProbe" */;
+			buildPhases = (
+				2A0000122C00000000000001 /* Sources */,
+				2A00000C2C00000000000001 /* Frameworks */,
+				2A0000082C00000000000001 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WatchProbe;
+			productName = WatchProbe;
+			productReference = 2A0000092C00000000000001 /* WatchProbe.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		2A0000132C00000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1530;
+				LastUpgradeCheck = 1530;
+				TargetAttributes = {
+					2A0000102C00000000000001 = {
+						CreatedOnToolsVersion = 15.3;
+					};
+				};
+			};
+			buildConfigurationList = 2A0000142C00000000000001 /* Build configuration list for PBXProject "WatchProbe" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 2A00000D2C00000000000001;
+			productRefGroup = 2A00000F2C00000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				2A0000102C00000000000001 /* WatchProbe */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		2A0000122C00000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2A0000012C00000000000001 /* AppDelegate.swift in Sources */,
+				2A0000702C00000000000001 /* SceneDelegate.swift in Sources */,
+				2A0000032C00000000000001 /* ProbeViewController.swift in Sources */,
+				2A0000722C00000000000001 /* WatchResearchStore.swift in Sources */,
+				2A0000742C00000000000001 /* WatchProbeDashboardView.swift in Sources */,
+				2A0000502C00000000000001 /* FMDatabase.m in Sources */,
+				2A0000512C00000000000001 /* FMDatabaseAdditions.m in Sources */,
+				2A0000522C00000000000001 /* FMDatabasePool.m in Sources */,
+				2A0000532C00000000000001 /* FMDatabaseQueue.m in Sources */,
+				2A0000542C00000000000001 /* FMResultSet.m in Sources */,
+				2A0000552C00000000000001 /* MJExtensionConst.m in Sources */,
+				2A0000562C00000000000001 /* MJFoundation.m in Sources */,
+				2A0000572C00000000000001 /* MJProperty.m in Sources */,
+				2A0000582C00000000000001 /* MJPropertyKey.m in Sources */,
+				2A0000592C00000000000001 /* MJPropertyType.m in Sources */,
+				2A00005A2C00000000000001 /* NSObject+MJClass.m in Sources */,
+				2A00005B2C00000000000001 /* NSObject+MJCoding.m in Sources */,
+				2A00005C2C00000000000001 /* NSObject+MJKeyValue.m in Sources */,
+				2A00005D2C00000000000001 /* NSObject+MJProperty.m in Sources */,
+				2A00005E2C00000000000001 /* NSString+MJExtension.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		2A0000152C00000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		2A0000162C00000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		2A0000172C00000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8XNAA8C9KP;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/WatchProbe",
+				);
+				INFOPLIST_FILE = WatchProbe/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = "$(inherited)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.vivekmatta.watchprobe;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "WatchProbe/WatchProbe-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		2A0000182C00000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8XNAA8C9KP;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/WatchProbe",
+				);
+				INFOPLIST_FILE = WatchProbe/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = "$(inherited)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.vivekmatta.watchprobe;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "WatchProbe/WatchProbe-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2A0000112C00000000000001 /* Build configuration list for PBXNativeTarget "WatchProbe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2A0000172C00000000000001 /* Debug */,
+				2A0000182C00000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2A0000142C00000000000001 /* Build configuration list for PBXProject "WatchProbe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2A0000152C00000000000001 /* Debug */,
+				2A0000162C00000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 2A0000132C00000000000001 /* Project object */;
+}

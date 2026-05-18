@@ -3,16 +3,13 @@
 .env
 google-api-key.json
 secrets/
-!package.json
-!package-lock.json
-!app.json
-!tsconfig.json
 
 # macOS
 .DS_Store
 
-# Node / Expo
-node_modules/
-.expo/
-.expo-shared/
-dist/
+# Xcode
+DerivedData/
+*.xcuserstate
+*.xcuserdata/
+xcuserdata/
+*.moved-aside
