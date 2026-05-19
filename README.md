@@ -34,13 +34,24 @@ Each sync snapshot includes:
 - supported temperature records
 - sports records
 - manual measurement records
+- a capped raw RR-interval probe for HRV investigation
 - metadata explaining skipped SDK paths
+- timeout and partial-sync diagnostics when a vendor SDK callback stalls
 
-The app intentionally avoids `veepooSdkStartReadDeviceAllDataWithReadStateChangeBlock` on the ES02 because it crashed inside the vendor SDK HRV parser with:
+The app intentionally avoids `veepooSdkStartReadDeviceAllDataWithReadStateChangeBlock` on the ES02 because it has crashed inside vendor SDK parsers:
 
 `-[NSTaggedPointerString hour]: unrecognized selector`
+`-[__NSCFString year]: unrecognized selector`
 
-The safer path uses the SDK direct/self-storage APIs serially and skips HRV direct reads.
+The safer path reads yesterday's sleep first, uses the SDK direct/self-storage APIs serially, skips the unavailable direct HRV day read, and saves partial JSON if a read times out.
+
+The vendor docs still matter: they recommend the SDK persistence flow of `VPPeripheralManage.shareVPPeripheralManager()`, then `veepooSdkStartReadDeviceAllData`, then `VPDataBaseOperation.veepooSDKGetAccurateSleepData(...)`. Because the SDK also warns that data commands are not concurrent, the next clean sleep check is to run the vendor demo from a fresh launch before trying another recovery mode in `WatchProbe`.
+
+Vendor demo workspace:
+
+`/Users/vivekmatta/Desktop/iOS_Ble_SDK/iOS_sdk_source/Demo/VeepooBleSDKDemo/VeepooBleSDKDemo.xcworkspace`
+
+Use the workspace in Xcode, select scheme `VeepooBleSDKDemo`, run on a physical iPhone, update signing if needed, connect to `ES02`, let the demo complete its automatic daily read, then check its sleep screen. If the demo succeeds, `WatchProbe` should add a fresh-start SDK DB sync mode; if it crashes in `VPAccurateSleepModel parseA3HeaderWithData:andModel:dayNumber:`, send that log to the vendor.
 
 Do not use `veepooSDKClearDeviceData` for the normal sync cycle. The SDK header says the bracelet shuts down after clearing and there is no success callback. Keep watch data on-device and avoid duplicate imports with local sync snapshots/watermarks instead.
 

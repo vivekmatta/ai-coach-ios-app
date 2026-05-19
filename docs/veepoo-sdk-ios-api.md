@@ -2,13 +2,36 @@
 
 ## Local Integration Notes
 
-These notes describe the current `WatchProbe` implementation as of May 18, 2026.
+These notes describe the current `WatchProbe` implementation as of May 19, 2026.
 
 - Verified watch: `ES02 / 1B:89:F9:42:CF:54`.
 - The app uses `VPBleCentralManage.sharedBleManager()` and `VPPeripheralManage.shareVPPeripheralManager()`.
 - The app remembers the preferred watch and starts auto-connect when opened.
 - Local sync files are saved in `Library/Application Support/WatchResearchData/<device>/<date>/sync-*.json`.
 - SDK commands must stay serial. Do not start another data command while one read is in progress.
+
+### Vendor-Recommended Persistence Flow
+
+The company SDK documentation recommends SDK persistence for automatic measurement data:
+
+```swift
+VPBleCentralManage.sharedBleManager().peripheralManage = VPPeripheralManage.shareVPPeripheralManager()
+VPBleCentralManage.sharedBleManager().peripheralManage.veepooSdkStartReadDeviceAllData { state, totalDay, currentDay, progress in
+    // wait for .complete
+}
+let accurateSleep = VPDataBaseOperation.veepooSDKGetAccurateSleepData(
+    withDate: queryDate,
+    andTableID: VPBleCentralManage.sharedBleManager().peripheralModel.deviceAddress
+)
+```
+
+The SDK documentation also warns that internal data interfaces do not support concurrent operations. The May 19 manual recovery crash happened after a direct sleep read had timed out, so the SDK may still have considered that read active when the bulk daily read began. A clean test should run the vendor demo from a fresh launch, with H Band and `WatchProbe` closed, and let the demo perform its automatic daily read first.
+
+Vendor demo path:
+
+`/Users/vivekmatta/Desktop/iOS_Ble_SDK/iOS_sdk_source/Demo/VeepooBleSDKDemo/VeepooBleSDKDemo.xcworkspace`
+
+Use the workspace, select scheme `VeepooBleSDKDemo`, run on a physical iPhone, update signing/team/bundle id if Xcode asks, connect to `ES02`, and check whether the demo can complete daily sync and display accurate sleep. If the demo succeeds, `WatchProbe` should add a fresh-start SDK DB sync mode that runs bulk daily sync before any direct-read timeout path. If the demo crashes in `VPAccurateSleepModel parseA3HeaderWithData:andModel:dayNumber:`, report that crash to the vendor with the watch model/address and console log.
 
 ### ES02 Bulk Daily Read Crash
 
@@ -18,11 +41,13 @@ The ES02 crashed when the app called the SDK bulk daily read path:
 - (void)veepooSdkStartReadDeviceAllDataWithReadStateChangeBlock:(...)
 ```
 
-Crash symptom:
+Known crash symptoms:
 
 ```text
 -[NSTaggedPointerString hour]: unrecognized selector
 VPHandleDeviceDailyData parseBlockHRVDataWithBlockModel:
+-[__NSCFString year]: unrecognized selector
+VPAccurateSleepModel parseA3HeaderWithData:andModel:dayNumber:
 ```
 
 Current app behavior:
@@ -30,6 +55,11 @@ Current app behavior:
 - bulk daily read is disabled
 - direct HRV reads are skipped
 - sync uses safer direct watch-storage reads where the SDK exposes them
+- day `1` sleep is read before the heavier day reads so overnight data can be saved first
+- each SDK callback path has a timeout and records partial-sync diagnostics instead of leaving the UI stuck
+- sleep direct reads use a longer timeout than other small reads because accurate sleep devices can be slower or fail to callback
+- HRV investigation uses a capped raw RR-interval probe, not the crashing bulk HRV parser
+- manual sleep recovery through the SDK database daily read was tested and removed because the same ES02 data crashes inside `VPAccurateSleepModel parseA3HeaderWithData:andModel:dayNumber:`
 
 ### Safe Direct Sync APIs Used
 
@@ -43,9 +73,11 @@ The app currently reads and stores these direct/self-storage paths:
 - (void)veepooSDK_readDeviceRunningCrcResult:(void(^)(NSArray *crcValues))readDeviceRunningCrcBlock;
 - (void)veepooSDK_readDeviceRunningDataWithBlockNumber:(NSInteger)blockNumber result:(void(^)(NSDictionary *runningDataDict, NSInteger totalPackage, NSInteger currentReadPackage))readDeviceRunningDataBlock;
 - (void)readManualTestDataWithTimestamp:(uint32_t)timestamp dataType:(VPManualTestDataType)dataType result:(void(^)(VPManualTestDataModel *))result;
+- (void)veepooSDK_readRRIntervalDataWithDayNumber:(NSInteger)dayNumber blockNumber:(NSInteger)blockNumber result:(void (^)(id responseObject, NSProgress *progress, NSError *error))result;
 ```
 
 Sleep note: the SDK header says sleep day `0` is not the display target; read sleep from day `1...saveDays`.
+HRV note: `veepooSDK_readHrvDataWithDayNumber` remains disabled because the SDK marks it unavailable; the RR probe is stored separately under sync metadata.
 
 ### Data Clearing Rule
 
@@ -59,8 +91,10 @@ The SDK header says clearing data shuts the bracelet down and there is no succes
 
 ### Next Implementation Work
 
-- Confirm overnight sleep payload shape from the May 19, 2026 test.
-- Add a sleep summary UI once real `directWatchReads.sleep.records` exist.
+- Run the vendor demo from a fresh launch to determine whether the official SDK persistence path succeeds when no prior direct read has timed out.
+- If the vendor demo succeeds, add a fresh-start SDK DB sync mode that runs `veepooSdkStartReadDeviceAllData` first and then reads `VPDataBaseOperation` sleep/HRV tables.
+- Investigate a lower-level JL small-file sleep read path that bypasses Veepoo's crashing accurate-sleep parser.
+- Add a sleep summary UI only after real `directWatchReads.sleep.records` or decoded JL sleep records exist.
 - Add per-data-type watermarks/checkpoints after confirming timestamps and CRCs.
 - Disable only the direct basic-data reader if it proves unstable on ES02 hardware; keep step/sleep/manual reads active.
 

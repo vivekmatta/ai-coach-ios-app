@@ -39,6 +39,12 @@ final class ProbeViewController: UIViewController {
 
     private let preferredDeviceAddressKey = "WatchProbe.preferredDeviceAddress"
     private let preferredDeviceNameKey = "WatchProbe.preferredDeviceName"
+    private let syncReadTimeout: TimeInterval = 15
+    private let syncSleepReadTimeout: TimeInterval = 60
+    private let syncLongReadTimeout: TimeInterval = 30
+    private let syncTotalTimeout: TimeInterval = 180
+    private let syncMaxPackageCount = 96
+    private let syncRRProbeMaxBlocks = 20
 
     private let statusLabel = UILabel()
     private let debugLogButton = UIButton(type: .system)
@@ -1059,29 +1065,75 @@ final class ProbeViewController: UIViewController {
         latestSafeSyncMetadata = [
             "mode": "safe_direct_watch_reads",
             "bulkDailyReadSkipped": true,
-            "bulkDailyReadDisabledReason": "ES02 firmware triggers a vendor SDK exception while parsing HRV daily data.",
+            "bulkDailyReadDisabledReason": "ES02 firmware triggers vendor SDK exceptions while parsing bulk HRV data and accurate sleep data.",
             "hrvDirectReadSkipped": true,
-            "hrvDirectReadSkippedReason": "The SDK marks direct HRV day reads unavailable and the bulk HRV parser has crashed on this watch."
+            "hrvDirectReadSkippedReason": "The SDK marks direct HRV day reads unavailable and the bulk HRV parser has crashed on this watch.",
+            "startedAt": ISO8601DateFormatter().string(from: Date()),
+            "timedOutReads": [],
+            "failedReads": [],
+            "readDurations": []
         ]
         appendStatus("Using safe direct watch reads; skipping the crashing SDK bulk daily/HRV sync.")
         performSafeDirectWatchSync(completion: completion)
     }
 
     private func performSafeDirectWatchSync(completion: @escaping (Bool) -> Void) {
-        let dayNumbers = [0, 1, 2]
+        let dayNumbers = [1, 0, 2]
         var dayPayloads: [[String: Any]] = []
+        var didFinish = false
+
+        func finish(success: Bool, reason: String) {
+            guard !didFinish else { return }
+            didFinish = true
+            latestSafeSyncDays = dayPayloads
+            latestSafeSyncMetadata["completedAt"] = ISO8601DateFormatter().string(from: Date())
+            latestSafeSyncMetadata["partial"] = !success
+            latestSafeSyncMetadata["finishReason"] = reason
+            collectionStatusLabel.text = success ? "Watch storage read complete" : "Saving partial watch sync"
+            completion(success)
+        }
+
+        let totalTimeout = DispatchWorkItem { [weak self] in
+            guard let self, !didFinish else { return }
+            self.recordTimedOutRead(name: "whole safe direct sync", timeout: self.syncTotalTimeout, duration: self.syncTotalTimeout)
+            finish(success: false, reason: "whole_sync_timeout")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + syncTotalTimeout, execute: totalTimeout)
+
+        func finishAndCancel(success: Bool, reason: String) {
+            totalTimeout.cancel()
+            finish(success: success, reason: reason)
+        }
 
         func readDay(at index: Int) {
+            guard !didFinish else { return }
             guard index < dayNumbers.count else {
-                readDirectSportsRecords { [weak self] sportsPayload in
-                    guard let self else { return }
-                    self.readDirectManualMeasurements { manualPayload in
-                        self.latestSafeSyncDays = dayPayloads
-                        self.latestSafeSyncMetadata["sportsRecords"] = sportsPayload
+                readDirectSportsRecords(shouldContinue: { !didFinish }) { [weak self] sportsPayload in
+                    guard let self, !didFinish else { return }
+                    self.latestSafeSyncMetadata["sportsRecords"] = sportsPayload
+                    if self.payloadHasTimeout(sportsPayload) || self.payloadHasFailure(sportsPayload) {
+                        finishAndCancel(success: false, reason: "sports_records_incomplete")
+                        return
+                    }
+
+                    self.readDirectManualMeasurements(shouldContinue: { !didFinish }) { manualPayload in
+                        guard !didFinish else { return }
                         self.latestSafeSyncMetadata["manualMeasurements"] = manualPayload
-                        self.latestSafeSyncMetadata["completedAt"] = ISO8601DateFormatter().string(from: Date())
-                        self.collectionStatusLabel.text = "Watch storage read complete"
-                        completion(true)
+                        if self.payloadHasTimeout(manualPayload) || self.payloadHasFailure(manualPayload) {
+                            finishAndCancel(success: false, reason: "manual_measurements_incomplete")
+                            return
+                        }
+
+                        self.readRRIntervalProbeIfNeeded(dayNumber: 1, shouldContinue: { !didFinish }) { rrPayload in
+                            guard !didFinish else { return }
+                            self.latestSafeSyncMetadata["rrIntervalProbe"] = rrPayload
+                            let rrTimedOut = self.payloadHasTimeout(rrPayload)
+                            let rrFailed = self.payloadHasFailure(rrPayload)
+                            finishAndCancel(
+                                success: !rrTimedOut && !rrFailed,
+                                reason: rrTimedOut ? "rr_interval_probe_timeout" : (rrFailed ? "rr_interval_probe_failed" : "completed")
+                            )
+                        }
                     }
                 }
                 return
@@ -1089,8 +1141,13 @@ final class ProbeViewController: UIViewController {
 
             let dayNumber = dayNumbers[index]
             collectionStatusLabel.text = "Reading watch day \(dayNumber)..."
-            readSafeDirectDay(dayNumber: dayNumber) { dayPayload in
+            readSafeDirectDay(dayNumber: dayNumber, shouldContinue: { !didFinish }) { [weak self] dayPayload in
+                guard let self, !didFinish else { return }
                 dayPayloads.append(dayPayload)
+                if self.payloadHasTimeout(dayPayload) || self.payloadHasFailure(dayPayload) {
+                    finishAndCancel(success: false, reason: "day_\(dayNumber)_incomplete")
+                    return
+                }
                 readDay(at: index + 1)
             }
         }
@@ -1098,43 +1155,214 @@ final class ProbeViewController: UIViewController {
         readDay(at: 0)
     }
 
-    private func readSafeDirectDay(dayNumber: Int, completion: @escaping ([String: Any]) -> Void) {
+    private func readSafeDirectDay(
+        dayNumber: Int,
+        shouldContinue: @escaping () -> Bool = { true },
+        completion: @escaping ([String: Any]) -> Void
+    ) {
         var dayPayload: [String: Any] = [
             "date": WatchResearchStore.dayString(daysAgo: dayNumber),
             "daysAgo": dayNumber,
             "source": "watch_direct_read"
         ]
 
-        readDirectSteps(dayNumber: dayNumber) { [weak self] stepPayload in
+        let readMetricsAfterSleep = { [weak self] in
             guard let self else { return }
-            dayPayload["steps"] = stepPayload
-            self.readDirectSleepIfNeeded(dayNumber: dayNumber) { sleepPayload in
-                dayPayload["sleep"] = sleepPayload
-                self.readDirectBasicData(dayNumber: dayNumber) { basicPayload in
+            guard shouldContinue() else { return }
+            self.readDirectSteps(dayNumber: dayNumber, shouldContinue: shouldContinue) { stepPayload in
+                guard shouldContinue() else { return }
+                dayPayload["steps"] = stepPayload
+                if self.payloadHasTimeout(stepPayload) || self.payloadHasFailure(stepPayload) {
+                    completion(dayPayload)
+                    return
+                }
+
+                self.readDirectBasicData(dayNumber: dayNumber, shouldContinue: shouldContinue) { basicPayload in
+                    guard shouldContinue() else { return }
                     dayPayload["basicData"] = basicPayload
-                    self.readDirectTemperatureIfNeeded(dayNumber: dayNumber) { temperaturePayload in
+                    if self.payloadHasTimeout(basicPayload) || self.payloadHasFailure(basicPayload) {
+                        completion(dayPayload)
+                        return
+                    }
+
+                    self.readDirectTemperatureIfNeeded(dayNumber: dayNumber, shouldContinue: shouldContinue) { temperaturePayload in
+                        guard shouldContinue() else { return }
                         dayPayload["temperature"] = temperaturePayload
                         completion(dayPayload)
                     }
                 }
             }
         }
+
+        guard dayNumber > 0 else {
+            dayPayload["sleep"] = [
+                "skipped": true,
+                "reason": "SDK sleep day 0 is not valid; sleep should be read from day 1 or later."
+            ]
+            readMetricsAfterSleep()
+            return
+        }
+
+        collectionStatusLabel.text = "Reading sleep day \(dayNumber)..."
+        readDirectSleepIfNeeded(dayNumber: dayNumber, shouldContinue: shouldContinue) { [weak self] sleepPayload in
+            guard let self else { return }
+            guard shouldContinue() else { return }
+            dayPayload["sleep"] = sleepPayload
+            if self.payloadHasTimeout(sleepPayload) || self.payloadHasFailure(sleepPayload) {
+                completion(dayPayload)
+                return
+            }
+            readMetricsAfterSleep()
+        }
     }
 
-    private func readDirectSteps(dayNumber: Int, completion: @escaping ([String: Any]) -> Void) {
-        manager?.peripheralManage.veepooSDK_readStepData(withDayNumber: dayNumber) { [weak self] stepDict in
+    private func timedReadFinisher(
+        name: String,
+        timeout: TimeInterval,
+        onFinish: (() -> Void)? = nil,
+        completion: @escaping ([String: Any]) -> Void
+    ) -> ([String: Any]) -> Void {
+        let startedAt = Date()
+        var didFinish = false
+        let timeoutWork = DispatchWorkItem { [weak self] in
+            guard let self, !didFinish else { return }
+            didFinish = true
+            onFinish?()
+            self.recordTimedOutRead(name: name, timeout: timeout, duration: Date().timeIntervalSince(startedAt))
+            completion([
+                "timedOut": true,
+                "readName": name,
+                "timeoutSeconds": timeout,
+                "durationSeconds": Date().timeIntervalSince(startedAt)
+            ])
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: timeoutWork)
+
+        return { [weak self] payload in
             DispatchQueue.main.async {
+                guard !didFinish else {
+                    self?.appendStatus("Ignoring late callback for \(name).")
+                    return
+                }
+                didFinish = true
+                onFinish?()
+                timeoutWork.cancel()
+                var completedPayload = payload
+                let duration = Date().timeIntervalSince(startedAt)
+                completedPayload["durationSeconds"] = duration
+                self?.recordReadDuration(name: name, duration: duration)
+                completion(completedPayload)
+            }
+        }
+    }
+
+    private func failurePayload(name: String, reason: String) -> [String: Any] {
+        recordFailedRead(name: name, reason: reason)
+        return [
+            "failed": true,
+            "readName": name,
+            "reason": reason
+        ]
+    }
+
+    private func recordReadDuration(name: String, duration: TimeInterval) {
+        appendSyncMetadataArray(
+            key: "readDurations",
+            value: [
+                "name": name,
+                "durationSeconds": duration
+            ]
+        )
+    }
+
+    private func recordTimedOutRead(name: String, timeout: TimeInterval, duration: TimeInterval) {
+        appendStatus("\(name) timed out after \(Int(timeout))s; saving partial sync.")
+        appendSyncMetadataArray(
+            key: "timedOutReads",
+            value: [
+                "name": name,
+                "timeoutSeconds": timeout,
+                "durationSeconds": duration
+            ]
+        )
+    }
+
+    private func recordFailedRead(name: String, reason: String) {
+        appendStatus("\(name) failed: \(reason)")
+        appendSyncMetadataArray(
+            key: "failedReads",
+            value: [
+                "name": name,
+                "reason": reason
+            ]
+        )
+    }
+
+    private func appendSyncMetadataArray(key: String, value: [String: Any]) {
+        var values = latestSafeSyncMetadata[key] as? [[String: Any]] ?? []
+        values.append(value)
+        latestSafeSyncMetadata[key] = values
+    }
+
+    private func payloadHasTimeout(_ value: Any) -> Bool {
+        if let dictionary = value as? [String: Any] {
+            if dictionary["timedOut"] as? Bool == true { return true }
+            return dictionary.values.contains { payloadHasTimeout($0) }
+        }
+
+        if let array = value as? [Any] {
+            return array.contains { payloadHasTimeout($0) }
+        }
+
+        return false
+    }
+
+    private func payloadHasFailure(_ value: Any) -> Bool {
+        if let dictionary = value as? [String: Any] {
+            if dictionary["failed"] as? Bool == true { return true }
+            return dictionary.values.contains { payloadHasFailure($0) }
+        }
+
+        if let array = value as? [Any] {
+            return array.contains { payloadHasFailure($0) }
+        }
+
+        return false
+    }
+
+    private func readDirectSteps(
+        dayNumber: Int,
+        shouldContinue: @escaping () -> Bool = { true },
+        completion: @escaping ([String: Any]) -> Void
+    ) {
+        guard shouldContinue() else { return }
+        guard let peripheralManage = manager?.peripheralManage else {
+            completion(failurePayload(name: "steps day \(dayNumber)", reason: "peripheral manager unavailable"))
+            return
+        }
+
+        collectionStatusLabel.text = "Reading steps day \(dayNumber)..."
+        let finish = timedReadFinisher(name: "steps day \(dayNumber)", timeout: syncReadTimeout, completion: completion)
+        peripheralManage.veepooSDK_readStepData(withDayNumber: dayNumber) { [weak self] stepDict in
+            DispatchQueue.main.async {
+                guard shouldContinue() else { return }
                 let payload = stepDict as? [String: Any] ?? [:]
                 if dayNumber == 0 {
                     self?.applyStepPayloadToDashboard(payload)
                 }
                 self?.appendStatus("Direct step read day \(dayNumber): \(payload.isEmpty ? "no data" : "ok")")
-                completion(payload.isEmpty ? ["empty": true] : payload)
+                finish(payload.isEmpty ? ["empty": true] : payload)
             }
         }
     }
 
-    private func readDirectSleepIfNeeded(dayNumber: Int, completion: @escaping ([String: Any]) -> Void) {
+    private func readDirectSleepIfNeeded(
+        dayNumber: Int,
+        shouldContinue: @escaping () -> Bool = { true },
+        completion: @escaping ([String: Any]) -> Void
+    ) {
+        guard shouldContinue() else { return }
         guard dayNumber > 0 else {
             completion([
                 "skipped": true,
@@ -1143,26 +1371,74 @@ final class ProbeViewController: UIViewController {
             return
         }
 
-        manager?.peripheralManage.veepooSDK_readSleepData(withDayNumber: dayNumber) { [weak self] sleepArray in
+        guard let peripheralManage = manager?.peripheralManage else {
+            completion(failurePayload(name: "sleep day \(dayNumber)", reason: "peripheral manager unavailable"))
+            return
+        }
+
+        let sleepType = manager?.peripheralManage.peripheralModel.sleepType ?? -1
+        let finish = timedReadFinisher(name: "sleep day \(dayNumber)", timeout: syncSleepReadTimeout, completion: completion)
+        peripheralManage.veepooSDK_readSleepData(withDayNumber: dayNumber) { [weak self] sleepArray in
             DispatchQueue.main.async {
+                guard shouldContinue() else { return }
                 let records = sleepArray ?? []
                 self?.appendStatus("Direct sleep read day \(dayNumber): \(records.count) record(s)")
-                completion([
+                finish([
                     "records": records,
-                    "count": records.count
+                    "count": records.count,
+                    "sleepType": sleepType,
+                    "note": sleepType == 1 || sleepType == 3 ? "Device reports accurate sleep; SDK direct sleep callback may take longer or be unavailable on this firmware." : "Device reports normal sleep."
                 ])
             }
         }
     }
 
-    private func readDirectBasicData(dayNumber: Int, completion: @escaping ([String: Any]) -> Void) {
+    private func readDirectBasicData(
+        dayNumber: Int,
+        shouldContinue: @escaping () -> Bool = { true },
+        completion: @escaping ([String: Any]) -> Void
+    ) {
+        guard shouldContinue() else { return }
+        guard let peripheralManage = manager?.peripheralManage else {
+            completion(failurePayload(name: "basic day \(dayNumber)", reason: "peripheral manager unavailable"))
+            return
+        }
+
         var records: [Any] = []
         var lastPackage = 0
         var totalPackages = 0
+        var seenPackages = Set<Int>()
+        var readStopped = false
+        let finish = timedReadFinisher(
+            name: "basic day \(dayNumber)",
+            timeout: syncLongReadTimeout,
+            onFinish: { readStopped = true },
+            completion: completion
+        )
 
         func readPackage(_ package: Int) {
-            manager?.peripheralManage.veepooSDK_readBasicData(withDayNumber: dayNumber, maxPackage: package) { [weak self] basicArray, totalPackage, currentPackage in
+            guard !readStopped, shouldContinue() else {
+                readStopped = true
+                return
+            }
+            guard package <= syncMaxPackageCount else {
+                finish([
+                    "records": records,
+                    "count": records.count,
+                    "totalPackages": totalPackages,
+                    "lastPackage": lastPackage,
+                    "failed": true,
+                    "reason": "Exceeded package safety limit \(syncMaxPackageCount)."
+                ])
+                return
+            }
+
+            peripheralManage.veepooSDK_readBasicData(withDayNumber: dayNumber, maxPackage: package) { [weak self] basicArray, totalPackage, currentPackage in
                 DispatchQueue.main.async {
+                    guard !readStopped, shouldContinue() else {
+                        readStopped = true
+                        return
+                    }
                     records.append(contentsOf: basicArray ?? [])
                     totalPackages = totalPackage
                     lastPackage = currentPackage
@@ -1170,14 +1446,27 @@ final class ProbeViewController: UIViewController {
 
                     if totalPackage <= 0 || currentPackage >= totalPackage {
                         self?.appendStatus("Direct basic read day \(dayNumber): \(records.count) record(s)")
-                        completion([
+                        finish([
                             "records": records,
                             "count": records.count,
                             "totalPackages": totalPackages,
                             "lastPackage": lastPackage
                         ])
+                    } else if seenPackages.contains(currentPackage) {
+                        self?.appendStatus("Direct basic read day \(dayNumber): repeated package \(currentPackage), stopping partial read.")
+                        finish([
+                            "records": records,
+                            "count": records.count,
+                            "totalPackages": totalPackages,
+                            "lastPackage": lastPackage,
+                            "failed": true,
+                            "reason": "Repeated package \(currentPackage)."
+                        ])
                     } else {
-                        readPackage(max(currentPackage + 1, package + 1))
+                        seenPackages.insert(currentPackage)
+                        if !readStopped, shouldContinue() {
+                            readPackage(max(currentPackage + 1, package + 1))
+                        }
                     }
                 }
             }
@@ -1186,7 +1475,12 @@ final class ProbeViewController: UIViewController {
         readPackage(1)
     }
 
-    private func readDirectTemperatureIfNeeded(dayNumber: Int, completion: @escaping ([String: Any]) -> Void) {
+    private func readDirectTemperatureIfNeeded(
+        dayNumber: Int,
+        shouldContinue: @escaping () -> Bool = { true },
+        completion: @escaping ([String: Any]) -> Void
+    ) {
+        guard shouldContinue() else { return }
         let temperatureType = manager?.peripheralManage.peripheralModel.temperatureType ?? 0
         guard temperatureType != 0 else {
             completion(["unsupported": true])
@@ -1201,23 +1495,67 @@ final class ProbeViewController: UIViewController {
             return
         }
 
+        guard let peripheralManage = manager?.peripheralManage else {
+            completion(failurePayload(name: "temperature day \(dayNumber)", reason: "peripheral manager unavailable"))
+            return
+        }
+
         var records: [Any] = []
+        var seenPackages = Set<Int>()
+        var readStopped = false
+        let finish = timedReadFinisher(
+            name: "temperature day \(dayNumber)",
+            timeout: syncLongReadTimeout,
+            onFinish: { readStopped = true },
+            completion: completion
+        )
 
         func readPackage(_ package: Int) {
-            manager?.peripheralManage.veepooSDK_readDeviceAutoTestTemperatureData(withDayNumber: dayNumber, maxPackage: package) { [weak self] tempArray, totalPackage, currentPackage in
+            guard !readStopped, shouldContinue() else {
+                readStopped = true
+                return
+            }
+            guard package <= syncMaxPackageCount else {
+                finish([
+                    "records": records,
+                    "count": records.count,
+                    "failed": true,
+                    "reason": "Exceeded package safety limit \(syncMaxPackageCount)."
+                ])
+                return
+            }
+
+            peripheralManage.veepooSDK_readDeviceAutoTestTemperatureData(withDayNumber: dayNumber, maxPackage: package) { [weak self] tempArray, totalPackage, currentPackage in
                 DispatchQueue.main.async {
+                    guard !readStopped, shouldContinue() else {
+                        readStopped = true
+                        return
+                    }
                     records.append(contentsOf: tempArray ?? [])
 
                     if totalPackage <= 0 || currentPackage >= totalPackage {
                         self?.appendStatus("Direct temperature read day \(dayNumber): \(records.count) record(s)")
-                        completion([
+                        finish([
                             "records": records,
                             "count": records.count,
                             "totalPackages": totalPackage,
                             "lastPackage": currentPackage
                         ])
+                    } else if seenPackages.contains(currentPackage) {
+                        self?.appendStatus("Direct temperature read day \(dayNumber): repeated package \(currentPackage), stopping partial read.")
+                        finish([
+                            "records": records,
+                            "count": records.count,
+                            "totalPackages": totalPackage,
+                            "lastPackage": currentPackage,
+                            "failed": true,
+                            "reason": "Repeated package \(currentPackage)."
+                        ])
                     } else {
-                        readPackage(max(currentPackage + 1, package + 1))
+                        seenPackages.insert(currentPackage)
+                        if !readStopped, shouldContinue() {
+                            readPackage(max(currentPackage + 1, package + 1))
+                        }
                     }
                 }
             }
@@ -1226,9 +1564,31 @@ final class ProbeViewController: UIViewController {
         readPackage(1)
     }
 
-    private func readDirectSportsRecords(completion: @escaping ([String: Any]) -> Void) {
-        manager?.peripheralManage.veepooSDK_readDeviceRunningCrcResult { [weak self] crcValues in
+    private func readDirectSportsRecords(
+        shouldContinue: @escaping () -> Bool = { true },
+        completion: @escaping ([String: Any]) -> Void
+    ) {
+        guard shouldContinue() else { return }
+        guard let peripheralManage = manager?.peripheralManage else {
+            completion(failurePayload(name: "sports records", reason: "peripheral manager unavailable"))
+            return
+        }
+
+        collectionStatusLabel.text = "Reading sports records..."
+        var readStopped = false
+        let finish = timedReadFinisher(
+            name: "sports records",
+            timeout: syncLongReadTimeout,
+            onFinish: { readStopped = true },
+            completion: completion
+        )
+
+        peripheralManage.veepooSDK_readDeviceRunningCrcResult { [weak self] crcValues in
             DispatchQueue.main.async {
+                guard !readStopped, shouldContinue() else {
+                    readStopped = true
+                    return
+                }
                 let crcs = crcValues ?? []
                 let indexedCRCs = crcs.enumerated().compactMap { index, value -> (Int, Any)? in
                     if let number = value as? NSNumber, number.intValue != 0 {
@@ -1239,7 +1599,7 @@ final class ProbeViewController: UIViewController {
 
                 guard !indexedCRCs.isEmpty else {
                     self?.appendStatus("Direct sports read: no stored sports records.")
-                    completion([
+                    finish([
                         "crcValues": crcs,
                         "records": [],
                         "count": 0
@@ -1250,9 +1610,13 @@ final class ProbeViewController: UIViewController {
                 var records: [[String: Any]] = []
 
                 func readRecord(at cursor: Int) {
+                    guard !readStopped, shouldContinue() else {
+                        readStopped = true
+                        return
+                    }
                     guard cursor < indexedCRCs.count else {
                         self?.appendStatus("Direct sports read: \(records.count) record(s)")
-                        completion([
+                        finish([
                             "crcValues": crcs,
                             "records": records,
                             "count": records.count
@@ -1264,6 +1628,10 @@ final class ProbeViewController: UIViewController {
                     var latestRecord: [String: Any] = [:]
                     self?.manager?.peripheralManage.veepooSDK_readDeviceRunningData(withBlockNumber: item.0) { runningDict, totalPackage, currentPackage in
                         DispatchQueue.main.async {
+                            guard !readStopped, shouldContinue() else {
+                                readStopped = true
+                                return
+                            }
                             latestRecord = runningDict as? [String: Any] ?? latestRecord
                             if totalPackage <= 0 || currentPackage >= totalPackage {
                                 records.append([
@@ -1273,7 +1641,9 @@ final class ProbeViewController: UIViewController {
                                     "totalPackages": totalPackage,
                                     "lastPackage": currentPackage
                                 ])
-                                readRecord(at: cursor + 1)
+                                if !readStopped, shouldContinue() {
+                                    readRecord(at: cursor + 1)
+                                }
                             }
                         }
                     }
@@ -1284,21 +1654,117 @@ final class ProbeViewController: UIViewController {
         }
     }
 
-    private func readDirectManualMeasurements(completion: @escaping ([String: Any]) -> Void) {
-        let supported = manager?.peripheralManage.supportManualTestType.rawValue ?? 0
+    private func readDirectManualMeasurements(
+        shouldContinue: @escaping () -> Bool = { true },
+        completion: @escaping ([String: Any]) -> Void
+    ) {
+        guard shouldContinue() else { return }
+        guard let peripheralManage = manager?.peripheralManage else {
+            completion(failurePayload(name: "manual measurements", reason: "peripheral manager unavailable"))
+            return
+        }
+
+        let supported = peripheralManage.supportManualTestType.rawValue
         guard supported != 0 else {
             completion(["unsupported": true])
             return
         }
 
         let allTypes = VPManualTestDataType(rawValue: UInt(UInt32.max))
-        manager?.peripheralManage.readManualTestData(withTimestamp: 0, dataType: allTypes) { [weak self] model in
+        collectionStatusLabel.text = "Reading manual measurements..."
+        let finish = timedReadFinisher(name: "manual measurements", timeout: syncReadTimeout, completion: completion)
+        peripheralManage.readManualTestData(withTimestamp: 0, dataType: allTypes) { [weak self] model in
             DispatchQueue.main.async {
+                guard shouldContinue() else { return }
                 let payload = self?.manualMeasurementsPayload(from: model) ?? ["empty": true]
                 self?.appendStatus("Direct manual measurement read complete.")
-                completion(payload)
+                finish(payload)
             }
         }
+    }
+
+    private func readRRIntervalProbeIfNeeded(
+        dayNumber: Int,
+        shouldContinue: @escaping () -> Bool = { true },
+        completion: @escaping ([String: Any]) -> Void
+    ) {
+        guard shouldContinue() else { return }
+        guard let peripheralManage = manager?.peripheralManage else {
+            completion(failurePayload(name: "rr interval day \(dayNumber)", reason: "peripheral manager unavailable"))
+            return
+        }
+
+        let model = peripheralManage.peripheralModel
+        guard model?.hrvType ?? 0 != 0 else {
+            completion([
+                "unsupported": true,
+                "reason": "Device model reports hrvType == 0."
+            ])
+            return
+        }
+
+        collectionStatusLabel.text = "Probing RR interval day \(dayNumber)..."
+        var records: [[String: Any]] = []
+        var readStopped = false
+        let finish = timedReadFinisher(
+            name: "rr interval day \(dayNumber)",
+            timeout: syncLongReadTimeout,
+            onFinish: { readStopped = true },
+            completion: completion
+        )
+
+        peripheralManage.veepooSDK_readRRIntervalData(withDayNumber: dayNumber, blockNumber: 1) { [weak self] responseObject, progress, error in
+            DispatchQueue.main.async {
+                guard let self, !readStopped, shouldContinue() else {
+                    readStopped = true
+                    return
+                }
+
+                if let error {
+                    finish([
+                        "failed": true,
+                        "error": error.localizedDescription,
+                        "records": records,
+                        "count": records.count
+                    ])
+                    return
+                }
+
+                if let rrModel = responseObject as? VPRRIntervalDataModel {
+                    records.append(self.rrIntervalPayload(from: rrModel))
+                }
+
+                let completed = progress?.completedUnitCount ?? 0
+                let total = progress?.totalUnitCount ?? 0
+                let progressFinished = total > 0 && completed >= total
+                if records.count >= self.syncRRProbeMaxBlocks || progressFinished {
+                    let reason = records.count >= self.syncRRProbeMaxBlocks ? "sample_limit_reached" : "complete"
+                    self.appendStatus("RR interval probe day \(dayNumber): \(records.count) block(s), \(reason).")
+                    finish([
+                        "dayNumber": dayNumber,
+                        "records": records,
+                        "count": records.count,
+                        "progressCompleted": completed,
+                        "progressTotal": total,
+                        "stoppedReason": reason,
+                        "note": "Vendor bulk HRV sync remains disabled; this probes raw RR blocks only."
+                    ])
+                }
+            }
+        }
+    }
+
+    private func rrIntervalPayload(from model: VPRRIntervalDataModel) -> [String: Any] {
+        let rrValues = UInt16.littleEndianValues(from: model.dataConvertStream)
+        return [
+            "blockNumber": model.blockNumber,
+            "date": model.date,
+            "time": model.time,
+            "dataStreamBytes": model.dataStream.count,
+            "dataConvertStreamBytes": model.dataConvertStream.count,
+            "rrValueCount": rrValues.count,
+            "rrValues": rrValues
+        ]
     }
 
     private func manualMeasurementsPayload(from model: VPManualTestDataModel?) -> [String: Any] {
@@ -1479,7 +1945,7 @@ final class ProbeViewController: UIViewController {
             }
             var metadata: [String: Any] = [
                 "status": dailySyncSucceeded ? "safe_direct_watch_sync_completed" : "local_snapshot_sdk_bulk_read_disabled",
-                "bulkDailyReadDisabledReason": "ES02 firmware triggers a vendor SDK exception while parsing HRV daily data.",
+                "bulkDailyReadDisabledReason": "ES02 firmware triggers vendor SDK exceptions while parsing bulk HRV data and accurate sleep data.",
                 "autoCollectionEnabled": self.isAutoCollectionEnabled,
                 "manualDisconnect": self.isManuallyDisconnected,
                 "capabilities": self.capabilityPayload(from: model),
@@ -2255,6 +2721,8 @@ final class ProbeViewController: UIViewController {
             "hrvType": model.hrvType,
             "temperatureType": model.temperatureType,
             "sleepType": model.sleepType,
+            "saveDays": model.saveDays,
+            "hrvSupportAllDay": model.hrvSupportAllDay,
             "runningType": model.runningType,
             "runningSaveTimes": model.runningSaveTimes,
             "bloodGlucoseType": model.bloodGlucoseType,
@@ -2305,6 +2773,26 @@ extension ProbeViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         connect(to: devices[indexPath.row])
+    }
+}
+
+private extension UInt16 {
+    static func littleEndianValues(from data: Data?) -> [UInt16] {
+        guard let data else { return [] }
+        var values: [UInt16] = []
+        values.reserveCapacity(data.count / 2)
+
+        var index = data.startIndex
+        while index < data.endIndex {
+            let nextIndex = data.index(after: index)
+            guard nextIndex < data.endIndex else { break }
+            let low = UInt16(data[index])
+            let high = UInt16(data[nextIndex]) << 8
+            values.append(low | high)
+            index = data.index(after: nextIndex)
+        }
+
+        return values
     }
 }
 
