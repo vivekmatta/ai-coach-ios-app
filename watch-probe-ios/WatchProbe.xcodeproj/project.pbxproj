@@ -14,12 +14,12 @@
 		2A0000742C00000000000001 /* WatchProbeDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000752C00000000000001 /* WatchProbeDashboardView.swift */; };
 		2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000062C00000000000001 /* VeepooBleSDK.framework */; };
 		2A0000302C00000000000001 /* ABParTool.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000202C00000000000001 /* ABParTool.framework */; };
-		2A0000312C00000000000001 /* JLDialUnit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000212C00000000000001 /* JLDialUnit.framework */; };
-		2A0000322C00000000000001 /* JL_BLEKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000222C00000000000001 /* JL_BLEKit.framework */; };
 		2A0000332C00000000000001 /* ZipZap.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000232C00000000000001 /* ZipZap.framework */; };
 		2A0000342C00000000000001 /* ABParTool.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000202C00000000000001 /* ABParTool.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		2A0000352C00000000000001 /* JLDialUnit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000212C00000000000001 /* JLDialUnit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		2A0000372C00000000000001 /* ZipZap.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000232C00000000000001 /* ZipZap.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		2A0000382C00000000000001 /* GRDFUSDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000242C00000000000001 /* GRDFUSDK.framework */; };
+		2A0000392C00000000000001 /* GRDFUSDK.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000242C00000000000001 /* GRDFUSDK.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		2A0000502C00000000000001 /* FMDatabase.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000402C00000000000001 /* FMDatabase.m */; };
 		2A0000512C00000000000001 /* FMDatabaseAdditions.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000412C00000000000001 /* FMDatabaseAdditions.m */; };
 		2A0000522C00000000000001 /* FMDatabasePool.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000422C00000000000001 /* FMDatabasePool.m */; };
@@ -43,11 +43,12 @@
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 10;
-			files = (
-				2A0000342C00000000000001 /* ABParTool.framework in Embed Frameworks */,
-				2A0000352C00000000000001 /* JLDialUnit.framework in Embed Frameworks */,
-				2A0000372C00000000000001 /* ZipZap.framework in Embed Frameworks */,
-			);
+				files = (
+					2A0000342C00000000000001 /* ABParTool.framework in Embed Frameworks */,
+					2A0000352C00000000000001 /* JLDialUnit.framework in Embed Frameworks */,
+					2A0000372C00000000000001 /* ZipZap.framework in Embed Frameworks */,
+					2A0000392C00000000000001 /* GRDFUSDK.framework in Embed Frameworks */,
+				);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -67,6 +68,7 @@
 		2A0000212C00000000000001 /* JLDialUnit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = JLDialUnit.framework; sourceTree = "<group>"; };
 		2A0000222C00000000000001 /* JL_BLEKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = JL_BLEKit.framework; sourceTree = "<group>"; };
 		2A0000232C00000000000001 /* ZipZap.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = ZipZap.framework; sourceTree = "<group>"; };
+		2A0000242C00000000000001 /* GRDFUSDK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GRDFUSDK.framework; sourceTree = "<group>"; };
 		2A0000402C00000000000001 /* FMDatabase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FMDatabase.m; sourceTree = "<group>"; };
 		2A0000412C00000000000001 /* FMDatabaseAdditions.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FMDatabaseAdditions.m; sourceTree = "<group>"; };
 		2A0000422C00000000000001 /* FMDatabasePool.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FMDatabasePool.m; sourceTree = "<group>"; };
@@ -89,11 +91,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */,
-				2A0000302C00000000000001 /* ABParTool.framework in Frameworks */,
-				2A0000312C00000000000001 /* JLDialUnit.framework in Frameworks */,
-				2A0000322C00000000000001 /* JL_BLEKit.framework in Frameworks */,
-				2A0000332C00000000000001 /* ZipZap.framework in Frameworks */,
+					2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */,
+					2A0000302C00000000000001 /* ABParTool.framework in Frameworks */,
+					2A0000332C00000000000001 /* ZipZap.framework in Frameworks */,
+					2A0000382C00000000000001 /* GRDFUSDK.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -123,6 +124,7 @@
 				2A0000212C00000000000001 /* JLDialUnit.framework */,
 				2A0000222C00000000000001 /* JL_BLEKit.framework */,
 				2A0000232C00000000000001 /* ZipZap.framework */,
+				2A0000242C00000000000001 /* GRDFUSDK.framework */,
 				2A0000602C00000000000001 /* ThirdParty */,
 			);
 			path = WatchProbe;
@@ -389,7 +391,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				OTHER_LDFLAGS = "$(inherited)";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"$(PROJECT_DIR)/WatchProbe/VeepooBleSDK.framework/VeepooBleSDK",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.vivekmatta.watchprobe;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = iphoneos;
@@ -417,7 +423,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				OTHER_LDFLAGS = "$(inherited)";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"$(PROJECT_DIR)/WatchProbe/VeepooBleSDK.framework/VeepooBleSDK",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.vivekmatta.watchprobe;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = iphoneos;

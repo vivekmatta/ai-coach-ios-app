@@ -107,6 +107,38 @@ final class WatchResearchStore {
         return latest?.url
     }
 
+    func loadSyncSnapshot(from fileURL: URL) throws -> [String: Any] {
+        let data = try Data(contentsOf: fileURL)
+        let object = try JSONSerialization.jsonObject(with: data)
+        return object as? [String: Any] ?? [:]
+    }
+
+    func latestSyncSnapshot() throws -> (url: URL, payload: [String: Any])? {
+        guard let fileURL = latestSyncFileURL() else { return nil }
+        return (fileURL, try loadSyncSnapshot(from: fileURL))
+    }
+
+    func allSyncSnapshots(limit: Int = 120) throws -> [(url: URL, payload: [String: Any])] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var files: [(url: URL, date: Date)] = []
+        for case let fileURL as URL in enumerator where fileURL.pathExtension == "json" {
+            let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey])
+            files.append((fileURL, values?.contentModificationDate ?? .distantPast))
+        }
+
+        return try files
+            .sorted { $0.date > $1.date }
+            .prefix(limit)
+            .map { (url: $0.url, payload: try loadSyncSnapshot(from: $0.url)) }
+    }
+
     func localStorageDetailSummary() -> String {
         guard let latestURL = latestSyncFileURL() else {
             return localStorageSummary()

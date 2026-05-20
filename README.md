@@ -27,33 +27,34 @@ The app now stores watch data locally in:
 
 Each sync snapshot includes:
 
-- SDK database snapshot fields where available
-- `directWatchReads.steps`
-- `directWatchReads.sleep`
-- `directWatchReads.basicData`
-- supported temperature records
-- sports records
-- manual measurement records
-- a capped raw RR-interval probe for HRV investigation
-- metadata explaining skipped SDK paths
-- timeout and partial-sync diagnostics when a vendor SDK callback stalls
+- SDK database daily data after `veepooSdkStartReadDeviceAllData`
+- sleep / accurate sleep from the SDK database snapshot
+- heart half-hour data
+- blood oxygen, blood pressure, blood glucose, temperature, activity, HRV, and ECG summaries where available
+- direct-read fallback payloads if SDK base daily sync does not complete
+- metadata explaining skipped SDK paths, timeouts, and partial-sync diagnostics
 
-The app intentionally avoids `veepooSdkStartReadDeviceAllDataWithReadStateChangeBlock` on the ES02 because it has crashed inside vendor SDK parsers:
+The current sync path runs the vendor SDK base daily sync first, then builds JSON from the SDK database. This fixed the sleep visibility problem: sleep now appears in exported JSON when the SDK database has records. Direct watch reads remain as fallback only, and SDK data commands must stay serial.
 
-`-[NSTaggedPointerString hour]: unrecognized selector`
-`-[__NSCFString year]: unrecognized selector`
+Recent ES02 logs show the watch exposing `3/3` saved days during base daily sync. The app writes a new JSON file after completed syncs and does not prune local JSON files. On app launch and foreground, the dashboard immediately loads the newest local JSON, then refreshes again after the next successful watch sync.
 
-The safer path reads yesterday's sleep first, uses the SDK direct/self-storage APIs serially, skips the unavailable direct HRV day read, and saves partial JSON if a read times out.
-
-The vendor docs still matter: they recommend the SDK persistence flow of `VPPeripheralManage.shareVPPeripheralManager()`, then `veepooSdkStartReadDeviceAllData`, then `VPDataBaseOperation.veepooSDKGetAccurateSleepData(...)`. Because the SDK also warns that data commands are not concurrent, the next clean sleep check is to run the vendor demo from a fresh launch before trying another recovery mode in `WatchProbe`.
-
-Vendor demo workspace:
-
-`/Users/vivekmatta/Desktop/iOS_Ble_SDK/iOS_sdk_source/Demo/VeepooBleSDKDemo/VeepooBleSDKDemo.xcworkspace`
-
-Use the workspace in Xcode, select scheme `VeepooBleSDKDemo`, run on a physical iPhone, update signing if needed, connect to `ES02`, let the demo complete its automatic daily read, then check its sleep screen. If the demo succeeds, `WatchProbe` should add a fresh-start SDK DB sync mode; if it crashes in `VPAccurateSleepModel parseA3HeaderWithData:andModel:dayNumber:`, send that log to the vendor.
+The app-side auto-sync interval is 10 minutes while the phone app is open/connected. That is not the same as configuring the watch to measure every 10 minutes. The watch can measure/store supported history offline according to its firmware/settings, but `WatchProbe` does not yet explicitly audit or enable each automatic measurement switch.
 
 Do not use `veepooSDKClearDeviceData` for the normal sync cycle. The SDK header says the bracelet shuts down after clearing and there is no success callback. Keep watch data on-device and avoid duplicate imports with local sync snapshots/watermarks instead.
+
+## Dashboard Behavior
+
+The first page now shows the latest saved values for sleep, HRV, blood oxygen, blood pressure, glucose, heart rate, activity, temperature, ECG, and battery. Each card is tappable and opens a detail page with:
+
+- latest parsed data
+- history grouped from saved local JSON files
+- sleep score, sleep duration, sleep/wake time, deep/light/awake minutes, and wake events for sleep records
+
+Sleep score is a local Apple-style estimate:
+
+- 50 points for duration against an 8-hour target
+- 30 points for bedtime consistency from saved sleep start times
+- 20 points for interruptions from awake duration and wake events
 
 Do not use an iPhone simulator for this step. Simulators cannot connect to the real watch over Bluetooth, and this probe links the manufacturer iPhoneOS SDK. If Xcode only shows simulator options or no usable device, plug in an iPhone, unlock it, trust the Mac, and select the phone from the run destination menu.
 
@@ -71,9 +72,7 @@ xcodebuild \
 
 ## Next Work
 
-- Wear the ES02 overnight and open the app the morning of May 19, 2026.
-- Wait for `Watch storage read complete`.
-- Export/open the latest JSON and inspect `directWatchReads.sleep.records` for day `1`.
-- If sleep records are present, build a first sleep summary UI from the JSON.
-- If basic-data direct reads crash or return empty on hardware, disable that one path and keep step/sleep/manual sync active.
+- Add an automatic measurement settings audit for HR/BP/HRV/SpO2/glucose/temperature and display enabled/disabled state.
+- Add optional controls to enable supported watch-side automatic measurement intervals.
+- Keep improving card history formatting as more multi-day JSON is collected.
 - Add local watermarks by data type once the returned payload shape is confirmed.

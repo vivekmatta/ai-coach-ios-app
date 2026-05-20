@@ -41,6 +41,7 @@ final class ProbeViewController: UIViewController {
     private let preferredDeviceNameKey = "WatchProbe.preferredDeviceName"
     private let syncReadTimeout: TimeInterval = 15
     private let syncSleepReadTimeout: TimeInterval = 60
+    private let syncBaseDailyTimeout: TimeInterval = 120
     private let syncLongReadTimeout: TimeInterval = 30
     private let syncTotalTimeout: TimeInterval = 180
     private let syncMaxPackageCount = 96
@@ -118,6 +119,7 @@ final class ProbeViewController: UIViewController {
             object: nil
         )
         appendStatus("Ready. Start scan when the watch is nearby.")
+        loadLatestSavedSnapshotIntoDashboard(logFailures: false)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
             self?.startPreferredWatchScan(reason: "app_launch")
         }
@@ -968,6 +970,7 @@ final class ProbeViewController: UIViewController {
     }
 
     @objc private func appWillEnterForeground() {
+        loadLatestSavedSnapshotIntoDashboard(logFailures: false)
         guard isAutoCollectionEnabled, !isManuallyDisconnected else { return }
         if isVerified {
             startCollectionTimer(runImmediately: true, reason: "app_open")
@@ -1060,12 +1063,13 @@ final class ProbeViewController: UIViewController {
     }
 
     private func syncDailyDataSequence(completion: @escaping (Bool) -> Void) {
-        collectionStatusLabel.text = "Reading watch storage safely..."
+        collectionStatusLabel.text = "Reading watch database..."
         latestSafeSyncDays = []
         latestSafeSyncMetadata = [
-            "mode": "safe_direct_watch_reads",
-            "bulkDailyReadSkipped": true,
-            "bulkDailyReadDisabledReason": "ES02 firmware triggers vendor SDK exceptions while parsing bulk HRV data and accurate sleep data.",
+            "mode": "sdk_database_first_then_safe_direct_reads",
+            "baseDailyReadAttempted": true,
+            "baseDailyReadReason": "Vendor demo reads sleep through SDK database sync; direct reads are fallback only.",
+            "baseDailyReadSucceeded": false,
             "hrvDirectReadSkipped": true,
             "hrvDirectReadSkippedReason": "The SDK marks direct HRV day reads unavailable and the bulk HRV parser has crashed on this watch.",
             "startedAt": ISO8601DateFormatter().string(from: Date()),
@@ -1073,8 +1077,24 @@ final class ProbeViewController: UIViewController {
             "failedReads": [],
             "readDurations": []
         ]
-        appendStatus("Using safe direct watch reads; skipping the crashing SDK bulk daily/HRV sync.")
-        performSafeDirectWatchSync(completion: completion)
+        appendStatus("Running SDK base daily sync first so sleep can populate the SDK database.")
+        readBaseDailyDataWithTimeout { [weak self] baseSucceeded in
+            guard let self else { return }
+            self.latestSafeSyncMetadata["baseDailyReadSucceeded"] = baseSucceeded
+            if baseSucceeded {
+                self.latestSafeSyncMetadata["completedAt"] = ISO8601DateFormatter().string(from: Date())
+                self.latestSafeSyncMetadata["partial"] = false
+                self.latestSafeSyncMetadata["finishReason"] = "sdk_base_daily_completed"
+                self.latestSafeSyncMetadata["safeDirectReadsSkipped"] = true
+                self.latestSafeSyncMetadata["safeDirectReadsSkippedReason"] = "SDK base daily sync completed; database snapshot already contains sleep, steps, and daily metrics."
+                self.collectionStatusLabel.text = "Watch database sync complete"
+                completion(true)
+                return
+            }
+
+            self.appendStatus("SDK base daily sync did not complete; falling back to safe direct reads.")
+            self.performSafeDirectWatchSync(completion: completion)
+        }
     }
 
     private func performSafeDirectWatchSync(completion: @escaping (Bool) -> Void) {
@@ -1198,6 +1218,15 @@ final class ProbeViewController: UIViewController {
             dayPayload["sleep"] = [
                 "skipped": true,
                 "reason": "SDK sleep day 0 is not valid; sleep should be read from day 1 or later."
+            ]
+            readMetricsAfterSleep()
+            return
+        }
+
+        if latestSafeSyncMetadata["baseDailyReadSucceeded"] as? Bool == true {
+            dayPayload["sleep"] = [
+                "skipped": true,
+                "reason": "SDK base daily sync completed first; sleep will be read from the SDK database snapshot for this date."
             ]
             readMetricsAfterSleep()
             return
@@ -1378,17 +1407,33 @@ final class ProbeViewController: UIViewController {
 
         let sleepType = manager?.peripheralManage.peripheralModel.sleepType ?? -1
         let finish = timedReadFinisher(name: "sleep day \(dayNumber)", timeout: syncSleepReadTimeout, completion: completion)
+        readVeepooDirectSleep(
+            dayNumber: dayNumber,
+            sleepType: sleepType,
+            peripheralManage: peripheralManage,
+            shouldContinue: shouldContinue,
+            finish: finish
+        )
+    }
+
+    private func readVeepooDirectSleep(
+        dayNumber: Int,
+        sleepType: Int,
+        peripheralManage: VPPeripheralBaseManage,
+        shouldContinue: @escaping () -> Bool,
+        finish: @escaping ([String: Any]) -> Void
+    ) {
         peripheralManage.veepooSDK_readSleepData(withDayNumber: dayNumber) { [weak self] sleepArray in
             DispatchQueue.main.async {
                 guard shouldContinue() else { return }
-                let records = sleepArray ?? []
+                let records = sleepArray?.map { $0 } ?? []
                 self?.appendStatus("Direct sleep read day \(dayNumber): \(records.count) record(s)")
-                finish([
-                    "records": records,
-                    "count": records.count,
-                    "sleepType": sleepType,
-                    "note": sleepType == 1 || sleepType == 3 ? "Device reports accurate sleep; SDK direct sleep callback may take longer or be unavailable on this firmware." : "Device reports normal sleep."
-                ])
+                let payload = self?.sleepRecordsPayload(records, sleepType: sleepType, source: "watch_direct_read") ?? [
+                    "records": [],
+                    "count": 0,
+                    "sleepType": sleepType
+                ]
+                finish(payload)
             }
         }
     }
@@ -1808,6 +1853,84 @@ final class ProbeViewController: UIViewController {
         return []
     }
 
+    private func isAccurateSleepType(_ sleepType: Int) -> Bool {
+        sleepType != 0 && sleepType != 2
+    }
+
+    private func sleepRecordsPayload(_ records: [Any], sleepType: Int, source: String) -> [String: Any] {
+        [
+            "records": records.map { sleepRecordPayload($0) },
+            "count": records.count,
+            "sleepType": sleepType,
+            "sleepKind": isAccurateSleepType(sleepType) ? "accurate" : "normal",
+            "source": source,
+            "note": isAccurateSleepType(sleepType)
+                ? "Device reports accurate sleep; records are serialized from VPAccurateSleepModel."
+                : "Device reports normal sleep; records use the SDK sleep dictionary fields."
+        ]
+    }
+
+    private func sleepRecordPayload(_ record: Any) -> Any {
+        if let model = record as? VPAccurateSleepModel {
+            return accurateSleepPayload(from: model)
+        }
+
+        if let dictionary = record as? [String: Any] {
+            return dictionary
+        }
+
+        if let dictionary = record as? NSDictionary {
+            var payload: [String: Any] = [:]
+            dictionary.forEach { key, value in
+                payload[String(describing: key)] = value
+            }
+            return payload
+        }
+
+        return ["description": String(describing: record)]
+    }
+
+    private func accurateSleepPayload(from model: VPAccurateSleepModel) -> [String: Any] {
+        let stringKeys = [
+            "sleepType",
+            "sleepTime",
+            "wakeTime",
+            "sleepTag",
+            "getUpScore",
+            "deepScore",
+            "sleepEfficiencyScore",
+            "fallAsleepScore",
+            "sleepTimeScore",
+            "exitSleepMode",
+            "sleepQuality",
+            "getUpTimes",
+            "deepAndLightMode",
+            "sleepDuration",
+            "deepDuration",
+            "lightDuration",
+            "getUpDuration",
+            "otherDuration",
+            "firstDeepDuration",
+            "getUpToDeepAve",
+            "onePointDuration",
+            "accurateType",
+            "insomniaTag",
+            "insomniaScore",
+            "insomniaTimes",
+            "sleepLine",
+            "insomniaDuration",
+            "lastType",
+            "nextType",
+            "mac"
+        ]
+        var payload = stringKeys.reduce(into: [String: Any]()) { result, key in
+            result[key] = model.value(forKey: key) ?? ""
+        }
+        payload["insomniaRecord"] = model.insomniaRecord
+        payload["sleepLineParsed"] = model.parseSleepLine()
+        return payload
+    }
+
     private func applyStepPayloadToDashboard(_ payload: [String: Any]) {
         let steps = stringValue(from: payload["Step"])
         let distance = stringValue(from: payload["Dis"])
@@ -1817,6 +1940,516 @@ final class ProbeViewController: UIViewController {
         viewModel.distance = distance
         viewModel.calories = calories
         markUpdated()
+    }
+
+    private func loadLatestSavedSnapshotIntoDashboard(logFailures: Bool = true) {
+        do {
+            guard let snapshot = try WatchResearchStore.shared.latestSyncSnapshot() else { return }
+            applySnapshotToDashboard(snapshot.payload, fileURL: snapshot.url)
+        } catch {
+            if logFailures {
+                appendStatus("Failed to load latest local JSON: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func applyLatestSnapshotToDashboard(from fileURL: URL) {
+        do {
+            let payload = try WatchResearchStore.shared.loadSyncSnapshot(from: fileURL)
+            applySnapshotToDashboard(payload, fileURL: fileURL)
+        } catch {
+            appendStatus("Saved JSON could not be reloaded for dashboard: \(error.localizedDescription)")
+        }
+    }
+
+    private func applySnapshotToDashboard(_ payload: [String: Any], fileURL: URL?) {
+        let latestDays = snapshotDays(from: payload)
+        let days = historicalDashboardDays(fallbackDays: latestDays)
+        var details: [String: MetricDetailData] = [:]
+
+        if let device = payload["device"] as? [String: Any] {
+            viewModel.deviceName = stringValue(from: device["name"])
+            viewModel.deviceAddress = stringValue(from: device["id"])
+        }
+
+        if let syncedAt = payload["syncedAt"] as? String {
+            let display = displayTimestamp(syncedAt)
+            viewModel.lastSync = display
+            viewModel.updatedAt = display
+            lastSyncLabel.text = "Last sync: \(display)"
+            watchStatusSyncLabel.text = "Last synced: \(display)"
+        }
+
+        if let heart = latestHeartRate(from: days) {
+            viewModel.heartRate = "\(heart.value) bpm"
+            heartTileValueLabel.text = "\(heart.value) bpm\n\(heart.time)"
+            details["heartRate"] = metricDetail(
+                id: "heartRate",
+                title: "Heart Rate",
+                icon: "heart.fill",
+                colorName: "red",
+                value: viewModel.heartRate,
+                detail: "Latest half-hour sample from \(heart.date)",
+                rows: [
+                    MetricDetailRow("Date", heart.date),
+                    MetricDetailRow("Time", heart.time),
+                    MetricDetailRow("Latest", "\(heart.value) bpm"),
+                    MetricDetailRow("Average", "\(heart.average) bpm"),
+                    MetricDetailRow("Samples", "\(heart.count)")
+                ],
+                history: heartRateHistory(from: days)
+            )
+        }
+
+        if let oxygen = latestDictionaryValue(from: days, metric: "bloodOxygen", valueKeys: ["OxygenValue", "oxygenValue", "value"], requirePositive: true) {
+            viewModel.oxygen = "\(oxygen.value)%"
+            oxygenTileValueLabel.text = "\(oxygen.value)%\n\(oxygen.time)"
+            details["oxygen"] = metricDetail(
+                id: "oxygen",
+                title: "Blood Oxygen",
+                icon: "drop.fill",
+                colorName: "blue",
+                value: viewModel.oxygen,
+                detail: "Latest SpO2 sample from \(oxygen.date)",
+                rows: oxygen.rows(prefix: "SpO2", unit: "%"),
+                history: dictionaryMetricHistory(
+                    from: days,
+                    metric: "bloodOxygen",
+                    valueKeys: ["OxygenValue", "oxygenValue", "value"],
+                    unit: "%",
+                    requirePositive: true
+                )
+            )
+        }
+
+        if let pressure = latestBloodPressure(from: days) {
+            viewModel.bloodPressure = "\(pressure.systolic)/\(pressure.diastolic)"
+            details["bloodPressure"] = metricDetail(
+                id: "bloodPressure",
+                title: "Blood Pressure",
+                icon: "gauge",
+                colorName: "red",
+                value: viewModel.bloodPressure,
+                detail: "Latest stored blood pressure",
+                rows: [
+                    MetricDetailRow("Date", pressure.date),
+                    MetricDetailRow("Time", pressure.time),
+                    MetricDetailRow("Systolic", "\(pressure.systolic) mmHg"),
+                    MetricDetailRow("Diastolic", "\(pressure.diastolic) mmHg"),
+                    MetricDetailRow("Samples", "\(pressure.count)")
+                ],
+                history: bloodPressureHistory(from: days)
+            )
+        }
+
+        applySleepDashboard(from: days, details: &details)
+        applyActivityDashboard(from: days, details: &details)
+        applyTemperatureDashboard(from: days, details: &details)
+        applyGlucoseDashboard(from: days, details: &details)
+        applyHRVDashboard(from: days, details: &details)
+        applyECGDashboard(from: days, details: &details)
+
+        details["battery"] = metricDetail(
+            id: "battery",
+            title: "Battery",
+            icon: "battery.100",
+            colorName: "green",
+            value: viewModel.battery,
+            detail: "Live battery value after connection",
+            rows: [MetricDetailRow("Battery", viewModel.battery), MetricDetailRow("Source", "Watch live read")]
+        )
+
+        let latestName = fileURL?.lastPathComponent ?? "Latest local sync"
+        details["updated"] = metricDetail(
+            id: "updated",
+            title: "Updated",
+            icon: "clock",
+            colorName: "secondary",
+            value: viewModel.updatedAt,
+            detail: latestName,
+            rows: [
+                MetricDetailRow("Last sync", viewModel.lastSync),
+                MetricDetailRow("Local file", latestName),
+                MetricDetailRow("Storage", WatchResearchStore.shared.localStorageDetailSummary())
+            ]
+        )
+
+        viewModel.metricDetails = details
+        viewModel.localStorage = WatchResearchStore.shared.localStorageDetailSummary()
+        viewModel.canExport = WatchResearchStore.shared.latestSyncFileURL() != nil
+    }
+
+    private func applySleepDashboard(from days: [[String: Any]], details: inout [String: MetricDetailData]) {
+        guard let sleep = latestSleepRecord(from: days) else {
+            viewModel.sleepDuration = "--"
+            viewModel.sleepScore = "--"
+            viewModel.sleepScoreDetail = "No sleep record"
+            details["sleep"] = metricDetail(
+                id: "sleep",
+                title: "Sleep",
+                icon: "bed.double.fill",
+                colorName: "secondary",
+                value: "--",
+                detail: "No sleep record in the latest local JSON",
+                rows: [MetricDetailRow("Status", "No sleep records found")],
+                history: []
+            )
+            return
+        }
+
+        let score = sleepScore(for: sleep.record, in: days)
+        let durationMinutes = intValue(from: sleep.record["sleepDuration"]) ?? score.durationMinutes
+        let deepMinutes = intValue(from: sleep.record["deepDuration"]) ?? 0
+        let lightMinutes = intValue(from: sleep.record["lightDuration"]) ?? 0
+        let awakeMinutes = intValue(from: sleep.record["getUpDuration"]) ?? 0
+        let wakeEvents = intValue(from: sleep.record["getUpTimes"]) ?? 0
+
+        viewModel.sleepDuration = durationText(minutes: durationMinutes)
+        viewModel.sleepScore = "\(score.total)/100"
+        viewModel.sleepScoreDetail = score.category
+
+        details["sleep"] = metricDetail(
+            id: "sleep",
+            title: "Sleep",
+            icon: "bed.double.fill",
+            colorName: "secondary",
+            value: viewModel.sleepScore,
+            detail: "\(viewModel.sleepDuration) slept, \(score.category)",
+            rows: [
+                MetricDetailRow("Date", sleep.date),
+                MetricDetailRow("Sleep time", stringValue(from: sleep.record["sleepTime"])),
+                MetricDetailRow("Wake time", stringValue(from: sleep.record["wakeTime"])),
+                MetricDetailRow("Duration", durationText(minutes: durationMinutes)),
+                MetricDetailRow("Deep", durationText(minutes: deepMinutes)),
+                MetricDetailRow("Light", durationText(minutes: lightMinutes)),
+                MetricDetailRow("Awake", durationText(minutes: awakeMinutes)),
+                MetricDetailRow("Wake events", "\(wakeEvents)"),
+                MetricDetailRow("Duration score", "\(score.durationPoints)/50"),
+                MetricDetailRow("Consistency score", "\(score.consistencyPoints)/30"),
+                MetricDetailRow("Interruption score", "\(score.interruptionPoints)/20"),
+                MetricDetailRow("Score model", "Apple-style estimate from duration, consistency, and interruptions")
+            ],
+            history: sleepHistory(from: days)
+        )
+    }
+
+    private func applyActivityDashboard(from days: [[String: Any]], details: inout [String: MetricDetailData]) {
+        guard let day = firstDay(in: days, where: { isNonEmptyDictionary($0["steps"]) }),
+              let steps = day["steps"] as? [String: Any] else { return }
+
+        let stepCount = stringValue(from: steps["Step"])
+        let distance = stringValue(from: steps["Dis"])
+        let calories = stringValue(from: steps["Cal"])
+        viewModel.steps = "\(stepCount) steps"
+        viewModel.distance = distance
+        viewModel.calories = calories
+        stepsTileValueLabel.text = "\(stepCount) steps\n\(distance) km / \(calories) kcal"
+        details["activity"] = metricDetail(
+            id: "activity",
+            title: "Activity",
+            icon: "figure.walk",
+            colorName: "orange",
+            value: viewModel.steps,
+            detail: "\(distance) km / \(calories) kcal on \(day["date"] as? String ?? "--")",
+            rows: [
+                MetricDetailRow("Date", day["date"] as? String ?? "--"),
+                MetricDetailRow("Steps", stepCount),
+                MetricDetailRow("Distance", "\(distance) km"),
+                MetricDetailRow("Calories", "\(calories) kcal")
+            ],
+            history: activityHistory(from: days)
+        )
+    }
+
+    private func applyTemperatureDashboard(from days: [[String: Any]], details: inout [String: MetricDetailData]) {
+        guard let temperature = latestDictionaryValue(from: days, metric: "temperature", valueKeys: ["value", "temperature", "bodyTemperature"], requirePositive: false) else { return }
+        viewModel.temperature = "\(temperature.value) C"
+        temperatureTileValueLabel.text = "\(temperature.value) C\n\(temperature.time)"
+        details["temperature"] = metricDetail(
+            id: "temperature",
+            title: "Temperature",
+            icon: "thermometer",
+            colorName: "red",
+            value: viewModel.temperature,
+            detail: "Latest stored temperature sample",
+            rows: temperature.rows(prefix: "Temperature", unit: " C"),
+            history: dictionaryMetricHistory(
+                from: days,
+                metric: "temperature",
+                valueKeys: ["value", "temperature", "bodyTemperature"],
+                unit: " C",
+                requirePositive: false
+            )
+        )
+    }
+
+    private func applyGlucoseDashboard(from days: [[String: Any]], details: inout [String: MetricDetailData]) {
+        guard let glucose = latestGlucose(from: days) else {
+            viewModel.bloodGlucose = "--"
+            return
+        }
+        viewModel.bloodGlucose = glucose.value
+        details["bloodGlucose"] = metricDetail(
+            id: "bloodGlucose",
+            title: "Glucose",
+            icon: "testtube.2",
+            colorName: "green",
+            value: glucose.value,
+            detail: "Latest stored glucose sample",
+            rows: [
+                MetricDetailRow("Date", glucose.date),
+                MetricDetailRow("Time", glucose.time),
+                MetricDetailRow("Glucose", glucose.value),
+                MetricDetailRow("Samples", "\(glucose.count)")
+            ],
+            history: glucoseHistory(from: days)
+        )
+    }
+
+    private func applyHRVDashboard(from days: [[String: Any]], details: inout [String: MetricDetailData]) {
+        guard let day = firstDay(in: days, where: { $0["hrv"] != nil }) else { return }
+        let hrv = day["hrv"]
+        if let dictionary = hrv as? [String: Any], dictionary["skipped"] as? Bool == true {
+            viewModel.hrv = "Skipped"
+            details["hrv"] = metricDetail(
+                id: "hrv",
+                title: "HRV",
+                icon: "waveform.path",
+                colorName: "primary",
+                value: "Skipped",
+                detail: stringValue(from: dictionary["reason"]),
+                rows: [
+                    MetricDetailRow("Date", day["date"] as? String ?? "--"),
+                    MetricDetailRow("Status", "Skipped"),
+                    MetricDetailRow("Reason", stringValue(from: dictionary["reason"]))
+                ],
+                history: hrvHistory(from: days)
+            )
+        } else {
+            viewModel.hrv = "\(recordCount(hrv)) records"
+            details["hrv"] = metricDetail(
+                id: "hrv",
+                title: "HRV",
+                icon: "waveform.path",
+                colorName: "primary",
+                value: viewModel.hrv,
+                detail: "Stored HRV data",
+                rows: [MetricDetailRow("Date", day["date"] as? String ?? "--"), MetricDetailRow("Records", "\(recordCount(hrv))")],
+                history: hrvHistory(from: days)
+            )
+        }
+    }
+
+    private func applyECGDashboard(from days: [[String: Any]], details: inout [String: MetricDetailData]) {
+        let count = days.reduce(0) { $0 + recordCount($1["offlineECG"]) }
+        viewModel.ecg = count > 0 ? "\(count) record(s)" : "--"
+        ecgTileValueLabel.text = viewModel.ecg
+        details["ecg"] = metricDetail(
+            id: "ecg",
+            title: "ECG",
+            icon: "waveform.path.ecg",
+            colorName: "primary",
+            value: viewModel.ecg,
+            detail: "Offline ECG records in local JSON",
+            rows: [MetricDetailRow("Records", "\(count)"), MetricDetailRow("Source", "offlineECG")],
+            history: ecgHistory(from: days)
+        )
+    }
+
+    private func metricDetail(
+        id: String,
+        title: String,
+        icon: String,
+        colorName: String,
+        value: String,
+        detail: String,
+        rows: [MetricDetailRow],
+        history: [MetricHistorySection] = []
+    ) -> MetricDetailData {
+        MetricDetailData(id: id, title: title, icon: icon, colorName: colorName, value: value, detail: detail, rows: rows, history: history)
+    }
+
+    private func historicalDashboardDays(fallbackDays: [[String: Any]]) -> [[String: Any]] {
+        do {
+            let snapshots = try WatchResearchStore.shared.allSyncSnapshots()
+            var daysByDate: [String: [String: Any]] = [:]
+            for snapshot in snapshots {
+                for day in snapshotDays(from: snapshot.payload) {
+                    guard let date = day["date"] as? String, daysByDate[date] == nil else { continue }
+                    daysByDate[date] = day
+                }
+            }
+            let historyDays = Array(daysByDate.values)
+                .sorted { ($0["date"] as? String ?? "") > ($1["date"] as? String ?? "") }
+            return historyDays.isEmpty ? fallbackDays : historyDays
+        } catch {
+            return fallbackDays
+        }
+    }
+
+    private func sleepHistory(from days: [[String: Any]]) -> [MetricHistorySection] {
+        days.flatMap { day -> [MetricHistorySection] in
+            guard let date = day["date"] as? String else { return [] }
+            return sleepRecords(in: day).enumerated().map { index, record in
+                let score = sleepScore(for: record, in: days)
+                let durationMinutes = intValue(from: record["sleepDuration"]) ?? score.durationMinutes
+                let deepMinutes = intValue(from: record["deepDuration"]) ?? 0
+                let lightMinutes = intValue(from: record["lightDuration"]) ?? 0
+                let awakeMinutes = intValue(from: record["getUpDuration"]) ?? 0
+                let wakeEvents = intValue(from: record["getUpTimes"]) ?? 0
+                let title = index == 0 ? date : "\(date) sleep \(index + 1)"
+                return MetricHistorySection(title, rows: [
+                    MetricDetailRow("Score", "\(score.total)/100 \(score.category)", id: "\(title)-score"),
+                    MetricDetailRow("Sleep time", stringValue(from: record["sleepTime"]), id: "\(title)-sleep"),
+                    MetricDetailRow("Wake time", stringValue(from: record["wakeTime"]), id: "\(title)-wake"),
+                    MetricDetailRow("Duration", durationText(minutes: durationMinutes), id: "\(title)-duration"),
+                    MetricDetailRow("Deep", durationText(minutes: deepMinutes), id: "\(title)-deep"),
+                    MetricDetailRow("Light", durationText(minutes: lightMinutes), id: "\(title)-light"),
+                    MetricDetailRow("Awake", durationText(minutes: awakeMinutes), id: "\(title)-awake"),
+                    MetricDetailRow("Wake events", "\(wakeEvents)", id: "\(title)-events")
+                ])
+            }
+        }
+    }
+
+    private func heartRateHistory(from days: [[String: Any]]) -> [MetricHistorySection] {
+        days.compactMap { day in
+            guard let date = day["date"] as? String,
+                  let samples = day["heartHalfHour"] as? [String: Any] else { return nil }
+            let readings = samples.compactMap { key, value -> (time: String, value: Int)? in
+                guard let dictionary = value as? [String: Any],
+                      let heart = intValue(from: dictionary["heartValue"]),
+                      heart > 0 else { return nil }
+                return (key, heart)
+            }
+            .sorted { $0.time < $1.time }
+            guard !readings.isEmpty else { return nil }
+            let average = Int(round(Double(readings.reduce(0) { $0 + $1.value }) / Double(readings.count)))
+            let rows = [
+                MetricDetailRow("Average", "\(average) bpm", id: "\(date)-hr-average"),
+                MetricDetailRow("Samples", "\(readings.count)", id: "\(date)-hr-count")
+            ] + readings.enumerated().map { index, reading in
+                MetricDetailRow(reading.time, "\(reading.value) bpm", id: "\(date)-hr-\(index)")
+            }
+            return MetricHistorySection("\(date) (\(readings.count) samples)", rows: rows)
+        }
+    }
+
+    private func dictionaryMetricHistory(
+        from days: [[String: Any]],
+        metric: String,
+        valueKeys: [String],
+        unit: String,
+        requirePositive: Bool
+    ) -> [MetricHistorySection] {
+        days.compactMap { day in
+            guard let date = day["date"] as? String,
+                  let records = day[metric] as? [[String: Any]] else { return nil }
+            let rows = records.enumerated().compactMap { index, record -> MetricDetailRow? in
+                guard let rawValue = valueForFirstKey(in: record, keys: valueKeys) else { return nil }
+                if requirePositive, (doubleValue(from: rawValue) ?? 0) <= 0 { return nil }
+                let time = displayRecordTime(from: record, fallback: "Reading \(index + 1)")
+                return MetricDetailRow(time, "\(stringValue(from: rawValue))\(unit)", id: "\(date)-\(metric)-\(index)")
+            }
+            guard !rows.isEmpty else { return nil }
+            return MetricHistorySection("\(date) (\(rows.count) samples)", rows: rows)
+        }
+    }
+
+    private func bloodPressureHistory(from days: [[String: Any]]) -> [MetricHistorySection] {
+        days.compactMap { day in
+            guard let date = day["date"] as? String,
+                  let records = day["bloodPressure"] as? [[String: Any]] else { return nil }
+            let rows = records.enumerated().compactMap { index, record -> MetricDetailRow? in
+                guard let systolic = intValue(from: record["systolic"]),
+                      let diastolic = intValue(from: record["diastolic"]),
+                      systolic > 0,
+                      diastolic > 0 else { return nil }
+                let time = displayRecordTime(from: record, fallback: "Reading \(index + 1)")
+                return MetricDetailRow(time, "\(systolic)/\(diastolic) mmHg", id: "\(date)-bp-\(index)")
+            }
+            guard !rows.isEmpty else { return nil }
+            return MetricHistorySection("\(date) (\(rows.count) samples)", rows: rows)
+        }
+    }
+
+    private func glucoseHistory(from days: [[String: Any]]) -> [MetricHistorySection] {
+        days.compactMap { day in
+            guard let date = day["date"] as? String,
+                  let records = day["bloodGlucose"] as? [[String: Any]] else { return nil }
+            var rows: [MetricDetailRow] = []
+            for (recordIndex, record) in records.enumerated() {
+                let time = displayRecordTime(from: record, fallback: "Reading \(recordIndex + 1)")
+                if let values = record["bloodGlucoses"] as? [Any], !values.isEmpty {
+                    for (valueIndex, value) in values.enumerated() {
+                        let display = stringValue(from: value)
+                        guard display != "--" else { continue }
+                        let label = values.count == 1 ? time : "\(time) #\(valueIndex + 1)"
+                        rows.append(MetricDetailRow(label, display, id: "\(date)-glucose-\(recordIndex)-\(valueIndex)"))
+                    }
+                } else {
+                    let display = stringValue(from: record["bloodGlucose"] ?? record["value"])
+                    guard display != "--" else { continue }
+                    rows.append(MetricDetailRow(time, display, id: "\(date)-glucose-\(recordIndex)"))
+                }
+            }
+            guard !rows.isEmpty else { return nil }
+            return MetricHistorySection("\(date) (\(rows.count) samples)", rows: rows)
+        }
+    }
+
+    private func activityHistory(from days: [[String: Any]]) -> [MetricHistorySection] {
+        days.compactMap { day in
+            guard let date = day["date"] as? String,
+                  let steps = day["steps"] as? [String: Any],
+                  !steps.isEmpty else { return nil }
+            return MetricHistorySection(date, rows: [
+                MetricDetailRow("Steps", "\(stringValue(from: steps["Step"])) steps", id: "\(date)-steps"),
+                MetricDetailRow("Distance", "\(stringValue(from: steps["Dis"])) km", id: "\(date)-distance"),
+                MetricDetailRow("Calories", "\(stringValue(from: steps["Cal"])) kcal", id: "\(date)-calories")
+            ])
+        }
+    }
+
+    private func hrvHistory(from days: [[String: Any]]) -> [MetricHistorySection] {
+        days.compactMap { day in
+            guard let date = day["date"] as? String, let hrv = day["hrv"] else { return nil }
+            if let dictionary = hrv as? [String: Any], dictionary["skipped"] as? Bool == true {
+                return MetricHistorySection(date, rows: [
+                    MetricDetailRow("Status", "Skipped", id: "\(date)-hrv-status"),
+                    MetricDetailRow("Reason", stringValue(from: dictionary["reason"]), id: "\(date)-hrv-reason")
+                ])
+            }
+            return MetricHistorySection(date, rows: [
+                MetricDetailRow("Records", "\(recordCount(hrv))", id: "\(date)-hrv-count")
+            ])
+        }
+    }
+
+    private func ecgHistory(from days: [[String: Any]]) -> [MetricHistorySection] {
+        days.compactMap { day in
+            guard let date = day["date"] as? String else { return nil }
+            let count = recordCount(day["offlineECG"])
+            guard count > 0 else { return nil }
+            return MetricHistorySection(date, rows: [
+                MetricDetailRow("Records", "\(count)", id: "\(date)-ecg-count")
+            ])
+        }
+    }
+
+    private func sleepRecords(in day: [String: Any]) -> [[String: Any]] {
+        for key in ["accurateSleep", "sleep"] {
+            guard let payload = day[key] as? [String: Any],
+                  let records = payload["records"] as? [[String: Any]],
+                  !records.isEmpty else { continue }
+            return records
+        }
+        return []
+    }
+
+    private func displayRecordTime(from record: [String: Any], fallback: String) -> String {
+        let value = stringValue(from: record["Time"] ?? record["time"] ?? record["date"])
+        return value == "--" ? fallback : value
     }
 
     private func readBaseDailyData(completion: @escaping (Bool) -> Void) {
@@ -1831,6 +2464,28 @@ final class ProbeViewController: UIViewController {
                     completion(false)
                 }
             }
+        }
+    }
+
+    private func readBaseDailyDataWithTimeout(completion: @escaping (Bool) -> Void) {
+        var didFinish = false
+        let timeoutWork = DispatchWorkItem { [weak self] in
+            guard let self, !didFinish else { return }
+            didFinish = true
+            self.recordTimedOutRead(
+                name: "sdk base daily sync",
+                timeout: self.syncBaseDailyTimeout,
+                duration: self.syncBaseDailyTimeout
+            )
+            completion(false)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + syncBaseDailyTimeout, execute: timeoutWork)
+        readBaseDailyData { success in
+            guard !didFinish else { return }
+            didFinish = true
+            timeoutWork.cancel()
+            completion(success)
         }
     }
 
@@ -1944,8 +2599,8 @@ final class ProbeViewController: UIViewController {
                 ($0["date"] as? String ?? "") > ($1["date"] as? String ?? "")
             }
             var metadata: [String: Any] = [
-                "status": dailySyncSucceeded ? "safe_direct_watch_sync_completed" : "local_snapshot_sdk_bulk_read_disabled",
-                "bulkDailyReadDisabledReason": "ES02 firmware triggers vendor SDK exceptions while parsing bulk HRV data and accurate sleep data.",
+                "status": dailySyncSucceeded ? "sdk_database_sync_completed" : "local_snapshot_partial",
+                "bulkDailyReadDisabledReason": "SDK bulk read is used only after Objective-C categories are linked with -ObjC; direct fallback is used if that sync fails.",
                 "autoCollectionEnabled": self.isAutoCollectionEnabled,
                 "manualDisconnect": self.isManuallyDisconnected,
                 "capabilities": self.capabilityPayload(from: model),
@@ -1968,6 +2623,7 @@ final class ProbeViewController: UIViewController {
                 self.localStorageLabel.text = "Local data: \(WatchResearchStore.shared.localStorageDetailSummary())"
                 self.viewModel.lastSync = syncTime
                 self.viewModel.localStorage = WatchResearchStore.shared.localStorageDetailSummary()
+                self.applyLatestSnapshotToDashboard(from: fileURL)
                 completion(fileURL)
             } catch {
                 self.appendStatus("Local JSON save failed: \(error.localizedDescription)")
@@ -1984,10 +2640,14 @@ final class ProbeViewController: UIViewController {
             "bloodPressure": VPDataBaseOperation.veepooSDKGetBloodData(withDate: date, andTableID: tableID) ?? []
         ]
 
-        if model.sleepType == 0 {
-            day["sleep"] = VPDataBaseOperation.veepooSDKGetSleepData(withDate: date, andTableID: tableID) ?? []
+        if isAccurateSleepType(model.sleepType) {
+            let records = VPDataBaseOperation.veepooSDKGetAccurateSleepData(withDate: date, andTableID: tableID)?.map { $0 } ?? []
+            let payload = sleepRecordsPayload(records, sleepType: model.sleepType, source: "sdk_database")
+            day["sleep"] = payload
+            day["accurateSleep"] = payload
         } else {
-            day["accurateSleep"] = VPDataBaseOperation.veepooSDKGetAccurateSleepData(withDate: date, andTableID: tableID) ?? []
+            let records = VPDataBaseOperation.veepooSDKGetSleepData(withDate: date, andTableID: tableID)?.map { $0 } ?? []
+            day["sleep"] = sleepRecordsPayload(records, sleepType: model.sleepType, source: "sdk_database")
         }
 
         if model.oxygenType != 0 || model.bloodOxygenType != 0 {
@@ -2466,11 +3126,18 @@ final class ProbeViewController: UIViewController {
         viewModel.heartRate = "--"
         viewModel.oxygen = "--"
         viewModel.ecg = "--"
+        viewModel.hrv = "--"
+        viewModel.bloodPressure = "--"
+        viewModel.bloodGlucose = "--"
+        viewModel.sleepDuration = "--"
+        viewModel.sleepScore = "--"
+        viewModel.sleepScoreDetail = "No sleep score yet"
         viewModel.steps = "--"
         viewModel.distance = "--"
         viewModel.calories = "--"
         viewModel.temperature = "--"
         viewModel.updatedAt = "--"
+        viewModel.metricDetails = [:]
     }
 
     private func markUpdated() {
@@ -2577,6 +3244,303 @@ final class ProbeViewController: UIViewController {
             values.removeFirst(values.count - 60)
         }
         view.values = values
+    }
+
+    private struct LatestHeartRate {
+        let date: String
+        let time: String
+        let value: Int
+        let average: Int
+        let count: Int
+    }
+
+    private struct LatestMetricValue {
+        let date: String
+        let time: String
+        let value: String
+        let count: Int
+
+        func rows(prefix: String, unit: String) -> [MetricDetailRow] {
+            [
+                MetricDetailRow("Date", date),
+                MetricDetailRow("Time", time),
+                MetricDetailRow(prefix, "\(value)\(unit)"),
+                MetricDetailRow("Samples", "\(count)")
+            ]
+        }
+    }
+
+    private struct LatestBloodPressure {
+        let date: String
+        let time: String
+        let systolic: Int
+        let diastolic: Int
+        let count: Int
+    }
+
+    private struct LatestGlucose {
+        let date: String
+        let time: String
+        let value: String
+        let count: Int
+    }
+
+    private struct LatestSleep {
+        let date: String
+        let record: [String: Any]
+    }
+
+    private struct SleepScoreBreakdown {
+        let total: Int
+        let category: String
+        let durationMinutes: Int
+        let durationPoints: Int
+        let consistencyPoints: Int
+        let interruptionPoints: Int
+    }
+
+    private func snapshotDays(from payload: [String: Any]) -> [[String: Any]] {
+        let rawDays = payload["days"] as? [Any] ?? []
+        return rawDays
+            .compactMap { $0 as? [String: Any] }
+            .sorted { ($0["date"] as? String ?? "") > ($1["date"] as? String ?? "") }
+    }
+
+    private func firstDay(in days: [[String: Any]], where predicate: ([String: Any]) -> Bool) -> [String: Any]? {
+        days.first(where: predicate)
+    }
+
+    private func latestHeartRate(from days: [[String: Any]]) -> LatestHeartRate? {
+        for day in days {
+            guard let date = day["date"] as? String,
+                  let samples = day["heartHalfHour"] as? [String: Any] else { continue }
+
+            let readings = samples.compactMap { key, value -> (time: String, value: Int)? in
+                guard let dictionary = value as? [String: Any],
+                      let heart = intValue(from: dictionary["heartValue"]),
+                      heart > 0 else { return nil }
+                return (key, heart)
+            }
+            .sorted { $0.time < $1.time }
+
+            guard let latest = readings.last else { continue }
+            let average = Int(round(Double(readings.reduce(0) { $0 + $1.value }) / Double(readings.count)))
+            return LatestHeartRate(date: date, time: latest.time, value: latest.value, average: average, count: readings.count)
+        }
+        return nil
+    }
+
+    private func latestDictionaryValue(
+        from days: [[String: Any]],
+        metric: String,
+        valueKeys: [String],
+        requirePositive: Bool
+    ) -> LatestMetricValue? {
+        for day in days {
+            guard let date = day["date"] as? String,
+                  let records = day[metric] as? [[String: Any]],
+                  !records.isEmpty else { continue }
+
+            let matching = records.reversed().first { record in
+                guard let value = valueForFirstKey(in: record, keys: valueKeys) else { return false }
+                guard requirePositive else { return true }
+                return (doubleValue(from: value) ?? 0) > 0
+            }
+
+            guard let record = matching,
+                  let rawValue = valueForFirstKey(in: record, keys: valueKeys) else { continue }
+            return LatestMetricValue(
+                date: date,
+                time: stringValue(from: record["Time"] ?? record["time"] ?? record["date"]),
+                value: stringValue(from: rawValue),
+                count: records.count
+            )
+        }
+        return nil
+    }
+
+    private func latestBloodPressure(from days: [[String: Any]]) -> LatestBloodPressure? {
+        for day in days {
+            guard let date = day["date"] as? String,
+                  let records = day["bloodPressure"] as? [[String: Any]],
+                  !records.isEmpty else { continue }
+
+            for record in records.reversed() {
+                guard let systolic = intValue(from: record["systolic"]),
+                      let diastolic = intValue(from: record["diastolic"]),
+                      systolic > 0,
+                      diastolic > 0 else { continue }
+                return LatestBloodPressure(
+                    date: date,
+                    time: stringValue(from: record["Time"] ?? record["time"]),
+                    systolic: systolic,
+                    diastolic: diastolic,
+                    count: records.count
+                )
+            }
+        }
+        return nil
+    }
+
+    private func latestGlucose(from days: [[String: Any]]) -> LatestGlucose? {
+        for day in days {
+            guard let date = day["date"] as? String,
+                  let records = day["bloodGlucose"] as? [[String: Any]],
+                  !records.isEmpty else { continue }
+
+            for record in records.reversed() {
+                let glucoseArray = record["bloodGlucoses"] as? [Any] ?? []
+                let value = glucoseArray.compactMap { stringValue(from: $0) == "--" ? nil : stringValue(from: $0) }.last
+                    ?? stringValue(from: record["bloodGlucose"] ?? record["value"])
+                guard value != "--" else { continue }
+                return LatestGlucose(
+                    date: date,
+                    time: stringValue(from: record["time"] ?? record["Time"]),
+                    value: value,
+                    count: records.count
+                )
+            }
+        }
+        return nil
+    }
+
+    private func latestSleepRecord(from days: [[String: Any]]) -> LatestSleep? {
+        for day in days {
+            guard let date = day["date"] as? String else { continue }
+            for key in ["accurateSleep", "sleep"] {
+                guard let payload = day[key] as? [String: Any],
+                      let records = payload["records"] as? [[String: Any]],
+                      let record = records.first else { continue }
+                return LatestSleep(date: date, record: record)
+            }
+        }
+        return nil
+    }
+
+    private func sleepScore(for record: [String: Any], in days: [[String: Any]]) -> SleepScoreBreakdown {
+        let durationMinutes = intValue(from: record["sleepDuration"])
+            ?? ((intValue(from: record["deepDuration"]) ?? 0) + (intValue(from: record["lightDuration"]) ?? 0))
+        let goalMinutes = 480
+        let durationPoints = min(50, max(0, Int(round((Double(durationMinutes) / Double(goalMinutes)) * 50.0))))
+
+        let currentStart = sleepStartMinute(from: record)
+        let baselineStarts = days
+            .compactMap { day -> [String: Any]? in
+                guard let date = day["date"] as? String,
+                      let sleepDate = record["sleepTime"] as? String,
+                      !sleepDate.hasPrefix(date) else { return nil }
+                return latestSleepRecord(from: [day])?.record
+            }
+            .compactMap { sleepStartMinute(from: $0) }
+
+        let consistencyPoints: Int
+        if let currentStart, !baselineStarts.isEmpty {
+            let average = Int(round(Double(baselineStarts.reduce(0, +)) / Double(baselineStarts.count)))
+            let drift = circularMinuteDistance(currentStart, average)
+            consistencyPoints = max(0, 30 - max(0, drift - 60) / 10)
+        } else {
+            consistencyPoints = currentStart == nil ? 24 : 30
+        }
+
+        let awakeMinutes = intValue(from: record["getUpDuration"]) ?? 0
+        let wakeEvents = intValue(from: record["getUpTimes"]) ?? 0
+        let awakePenalty = max(0, awakeMinutes - 11) / 4
+        let eventPenalty = max(0, wakeEvents - 2) / 2
+        let interruptionPoints = max(0, 20 - awakePenalty - eventPenalty)
+        let total = min(100, max(0, durationPoints + consistencyPoints + interruptionPoints))
+
+        return SleepScoreBreakdown(
+            total: total,
+            category: sleepScoreCategory(total),
+            durationMinutes: durationMinutes,
+            durationPoints: durationPoints,
+            consistencyPoints: consistencyPoints,
+            interruptionPoints: interruptionPoints
+        )
+    }
+
+    private func sleepStartMinute(from record: [String: Any]) -> Int? {
+        guard let sleepTime = record["sleepTime"] as? String else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        guard let date = formatter.date(from: sleepTime) else { return nil }
+        let components = Calendar(identifier: .gregorian).dateComponents([.hour, .minute], from: date)
+        return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+    }
+
+    private func circularMinuteDistance(_ lhs: Int, _ rhs: Int) -> Int {
+        let direct = abs(lhs - rhs)
+        return min(direct, 1440 - direct)
+    }
+
+    private func sleepScoreCategory(_ score: Int) -> String {
+        switch score {
+        case 96...100: return "Very High"
+        case 81...95: return "High"
+        case 61...80: return "OK"
+        case 41...60: return "Low"
+        default: return "Very Low"
+        }
+    }
+
+    private func durationText(minutes: Int) -> String {
+        guard minutes > 0 else { return "0m" }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(remainder)m" }
+        if remainder == 0 { return "\(hours)h" }
+        return "\(hours)h \(remainder)m"
+    }
+
+    private func displayTimestamp(_ value: String) -> String {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: value) {
+            return displayTime(date)
+        }
+        return value
+    }
+
+    private func isNonEmptyDictionary(_ value: Any?) -> Bool {
+        guard let dictionary = value as? [String: Any] else { return false }
+        return !dictionary.isEmpty
+    }
+
+    private func recordCount(_ value: Any?) -> Int {
+        if let array = value as? [Any] { return array.count }
+        if let dictionary = value as? [String: Any],
+           let records = dictionary["records"] as? [Any] {
+            return records.count
+        }
+        if let dictionary = value as? [String: Any], !dictionary.isEmpty { return 1 }
+        return 0
+    }
+
+    private func valueForFirstKey(in dictionary: [String: Any], keys: [String]) -> Any? {
+        for key in keys {
+            if let value = dictionary[key] {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func intValue(from value: Any?) -> Int? {
+        if let int = value as? Int { return int }
+        if let number = value as? NSNumber { return number.intValue }
+        if let string = value as? String {
+            if let int = Int(string) { return int }
+            if let double = Double(string), double.isFinite { return Int(double) }
+        }
+        return nil
+    }
+
+    private func doubleValue(from value: Any?) -> Double? {
+        if let double = value as? Double { return double }
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let string = value as? String { return Double(string) }
+        return nil
     }
 
     private func stringValue(from value: Any?) -> String {

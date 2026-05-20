@@ -1,5 +1,51 @@
 import SwiftUI
 
+struct MetricDetailRow: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let value: String
+
+    init(_ label: String, _ value: String, id: String? = nil) {
+        self.id = id ?? "\(label)-\(value)"
+        self.label = label
+        self.value = value
+    }
+}
+
+struct MetricHistorySection: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let rows: [MetricDetailRow]
+
+    init(_ title: String, rows: [MetricDetailRow]) {
+        self.id = title
+        self.title = title
+        self.rows = rows
+    }
+}
+
+struct MetricDetailData: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let icon: String
+    let colorName: String
+    let value: String
+    let detail: String
+    let rows: [MetricDetailRow]
+    let history: [MetricHistorySection]
+
+    var color: Color {
+        switch colorName {
+        case "red": return .wpRed
+        case "blue": return .wpBlue
+        case "green": return .wpGreen
+        case "orange": return .wpOrange
+        case "secondary": return .wpSecondary
+        default: return .wpPrimary
+        }
+    }
+}
+
 final class WatchProbeViewModel: ObservableObject {
     @Published var deviceName = "ES02"
     @Published var deviceAddress = "--"
@@ -17,11 +63,18 @@ final class WatchProbeViewModel: ObservableObject {
     @Published var heartRate = "--"
     @Published var oxygen = "--"
     @Published var ecg = "--"
+    @Published var hrv = "--"
+    @Published var bloodPressure = "--"
+    @Published var bloodGlucose = "--"
+    @Published var sleepDuration = "--"
+    @Published var sleepScore = "--"
+    @Published var sleepScoreDetail = "No sleep score yet"
     @Published var steps = "--"
     @Published var distance = "--"
     @Published var calories = "--"
     @Published var temperature = "--"
     @Published var updatedAt = "--"
+    @Published var metricDetails: [String: MetricDetailData] = [:]
     @Published var debugLog = ""
     @Published var showDebugLog = false
 
@@ -41,6 +94,8 @@ final class WatchProbeViewModel: ObservableObject {
         if battery != "--" { score += 5 }
         if heartRate != "--" { score += 8 }
         if oxygen != "--" { score += 8 }
+        if sleepScore != "--" { score += 8 }
+        if hrv != "--" { score += 4 }
         if steps != "--" { score += 6 }
         if temperature != "--" { score += 4 }
         return min(score, 96)
@@ -181,45 +236,81 @@ private struct MetricsGrid: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            MetricCard(
-                title: "Heart Rate",
-                icon: "heart.fill",
-                color: .wpRed,
-                value: model.heartRate,
-                detail: "Live sensor",
-                actionTitle: "Start",
-                action: model.heartRateAction
+            DetailMetricCard(
+                id: "sleep",
+                title: "Sleep",
+                icon: "bed.double.fill",
+                color: .wpSecondary,
+                value: model.sleepScore,
+                detail: "\(model.sleepDuration) slept / \(model.sleepScoreDetail)",
+                detailData: model.metricDetails["sleep"]
             )
             HStack(spacing: 12) {
-                MetricCard(title: "Blood Oxygen", icon: "drop.fill", color: .wpBlue, value: model.oxygen, detail: "SpO2", actionTitle: "Start", action: model.oxygenAction)
-                MetricCard(title: "Battery", icon: "battery.100", color: .wpGreen, value: model.battery, detail: "Watch")
+                DetailMetricCard(id: "heartRate", title: "Heart Rate", icon: "heart.fill", color: .wpRed, value: model.heartRate, detail: "Latest saved or live", detailData: model.metricDetails["heartRate"])
+                DetailMetricCard(id: "oxygen", title: "Blood Oxygen", icon: "drop.fill", color: .wpBlue, value: model.oxygen, detail: "SpO2", detailData: model.metricDetails["oxygen"])
             }
-            MetricCard(
+            HStack(spacing: 12) {
+                DetailMetricCard(id: "hrv", title: "HRV", icon: "waveform.path", color: .wpPrimary, value: model.hrv, detail: "Heart rate variability", detailData: model.metricDetails["hrv"])
+                DetailMetricCard(id: "bloodPressure", title: "Blood Pressure", icon: "gauge.with.dots.needle.33percent", color: .wpRed, value: model.bloodPressure, detail: "Systolic / diastolic", detailData: model.metricDetails["bloodPressure"])
+            }
+            DetailMetricCard(
+                id: "activity",
                 title: "Activity",
                 icon: "figure.walk",
                 color: .wpOrange,
                 value: model.steps,
                 detail: "\(model.distance) km / \(model.calories) kcal",
-                actionTitle: "Poll",
-                action: model.stepAction
+                detailData: model.metricDetails["activity"]
             )
             HStack(spacing: 12) {
-                MetricCard(title: "Temperature", icon: "thermometer", color: .wpRed, value: model.temperature, detail: "Body / skin", actionTitle: "Start", action: model.temperatureAction)
-                MetricCard(title: "ECG", icon: "waveform.path.ecg", color: .wpPrimary, value: model.ecg, detail: "Manual test")
+                DetailMetricCard(id: "temperature", title: "Temperature", icon: "thermometer", color: .wpRed, value: model.temperature, detail: "Body / skin", detailData: model.metricDetails["temperature"])
+                DetailMetricCard(id: "bloodGlucose", title: "Glucose", icon: "testtube.2", color: .wpGreen, value: model.bloodGlucose, detail: "Latest stored value", detailData: model.metricDetails["bloodGlucose"])
             }
-            MetricCard(title: "Updated", icon: "clock", color: .wpSecondary, value: model.updatedAt, detail: model.connectionState)
+            HStack(spacing: 12) {
+                DetailMetricCard(id: "ecg", title: "ECG", icon: "waveform.path.ecg", color: .wpPrimary, value: model.ecg, detail: "Offline ECG", detailData: model.metricDetails["ecg"])
+                DetailMetricCard(id: "battery", title: "Battery", icon: "battery.100", color: .wpGreen, value: model.battery, detail: "Watch", detailData: model.metricDetails["battery"])
+            }
+            DetailMetricCard(id: "updated", title: "Updated", icon: "clock", color: .wpSecondary, value: model.updatedAt, detail: model.connectionState, detailData: model.metricDetails["updated"])
         }
     }
 }
 
-private struct MetricCard: View {
+private struct DetailMetricCard: View {
+    let id: String
     let title: String
     let icon: String
     let color: Color
     let value: String
     let detail: String
-    var actionTitle: String?
-    var action: (() -> Void)?
+    let detailData: MetricDetailData?
+
+    var body: some View {
+        NavigationLink(destination: MetricDetailView(detail: resolvedDetail)) {
+            MetricCardContent(title: title, icon: icon, color: color, value: value, detail: detail)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private var resolvedDetail: MetricDetailData {
+        detailData ?? MetricDetailData(
+            id: id,
+            title: title,
+            icon: icon,
+            colorName: "primary",
+            value: value,
+            detail: detail,
+            rows: [MetricDetailRow("Status", "No saved detail yet")],
+            history: []
+        )
+    }
+}
+
+private struct MetricCardContent: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let value: String
+    let detail: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -230,13 +321,9 @@ private struct MetricCard: View {
                     .wpLabel()
                     .foregroundColor(.wpTextSecondary)
                 Spacer()
-                if let actionTitle, let action {
-                    Button(action: action) {
-                        Text(actionTitle)
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .disabled(false)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.wpTextSecondary)
             }
             Text(value)
                 .font(.system(size: 22, weight: .bold))
@@ -249,6 +336,80 @@ private struct MetricCard: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+}
+
+private struct MetricDetailView: View {
+    let detail: MetricDetailData
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    CircleIcon(systemName: detail.icon, color: detail.color)
+                    Text(detail.title)
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(.wpText)
+                    Text(detail.value)
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundColor(detail.color)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.65)
+                    Text(detail.detail)
+                        .wpCaption()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card()
+
+                SectionPanel(title: "LATEST DATA") {
+                    MetricRowsCard(rows: detail.rows)
+                }
+
+                if !detail.history.isEmpty {
+                    SectionPanel(title: "HISTORY") {
+                        VStack(spacing: 12) {
+                            ForEach(detail.history) { section in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(section.title)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.wpText)
+                                    MetricRowsCard(rows: section.rows)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
+        .navigationBarTitle(Text(detail.title), displayMode: .inline)
+    }
+}
+
+private struct MetricRowsCard: View {
+    let rows: [MetricDetailRow]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(rows) { row in
+                HStack(alignment: .top, spacing: 12) {
+                    Text(row.label)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.wpTextSecondary)
+                    Spacer(minLength: 12)
+                    Text(row.value)
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.wpText)
+                        .multilineTextAlignment(.trailing)
+                }
+                .padding(.vertical, 10)
+                if row.id != rows.last?.id {
+                    Divider()
+                }
+            }
+        }
         .card()
     }
 }
