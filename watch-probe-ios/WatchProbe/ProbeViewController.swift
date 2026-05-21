@@ -1,5 +1,6 @@
 import UIKit
 import SwiftUI
+import UserNotifications
 
 final class ProbeViewController: UIViewController {
     private enum ActiveFunction: String {
@@ -119,6 +120,7 @@ final class ProbeViewController: UIViewController {
             object: nil
         )
         appendStatus("Ready. Start scan when the watch is nearby.")
+        updateNotificationPermissionStatus()
         loadLatestSavedSnapshotIntoDashboard(logFailures: false)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
             self?.startPreferredWatchScan(reason: "app_launch")
@@ -189,6 +191,41 @@ final class ProbeViewController: UIViewController {
         }
         viewModel.temperatureAction = { [weak self] in
             self?.toggleTemperature()
+        }
+        viewModel.notificationPermissionAction = { [weak self] in
+            CoachReminderScheduler.shared.requestAuthorizationAndSchedule { granted in
+                self?.viewModel.notificationPermissionStatus = granted ? "Daily reminder set for 8:00 AM" : "Notifications not allowed"
+                self?.appendStatus(granted ? "Morning sync reminder scheduled." : "Notification permission was not granted.")
+            }
+        }
+        viewModel.completeOnboardingAction = { [weak self] in
+            CoachReminderScheduler.shared.scheduleMorningSyncReminder()
+            guard let self, !self.isVerified else { return }
+            self.startPreferredWatchScan(reason: "onboarding_complete")
+        }
+        viewModel.watchSelectAction = { [weak self] candidate in
+            guard let self else { return }
+            if let model = self.devices.first(where: { ($0.deviceAddress ?? $0.deviceName ?? "") == candidate.id }) {
+                self.connect(to: model)
+            }
+        }
+    }
+
+    private func updateNotificationPermissionStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            DispatchQueue.main.async {
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    self?.viewModel.notificationPermissionStatus = "Daily reminder set for 8:00 AM"
+                    CoachReminderScheduler.shared.scheduleMorningSyncReminder()
+                case .denied:
+                    self?.viewModel.notificationPermissionStatus = "Notifications not allowed"
+                case .notDetermined:
+                    self?.viewModel.notificationPermissionStatus = "Not requested"
+                @unknown default:
+                    self?.viewModel.notificationPermissionStatus = "Unknown"
+                }
+            }
         }
     }
 
@@ -701,6 +738,7 @@ final class ProbeViewController: UIViewController {
         stopStepPolling(log: false)
         stopCollectionTimer()
         devices.removeAll()
+        viewModel.discoveredWatches = []
         isVerified = false
         isReadingBattery = false
         activeFunction = nil
@@ -735,6 +773,7 @@ final class ProbeViewController: UIViewController {
         stopCollectionTimer()
         manager?.veepooSDKStopScanDevice()
         manager?.veepooSDKDisconnectDevice()
+        viewModel.discoveredWatches = []
         isConnecting = false
         isVerified = false
         isReadingBattery = false
@@ -765,8 +804,17 @@ final class ProbeViewController: UIViewController {
             let rhs = $1.rssi?.intValue ?? Int.min
             return lhs > rhs
         }
+        let candidates = devices.map {
+            WatchDeviceCandidate(
+                id: $0.deviceAddress ?? $0.deviceName ?? UUID().uuidString,
+                name: displayName(for: $0),
+                address: $0.deviceAddress ?? "--",
+                rssi: $0.rssi?.intValue ?? 0
+            )
+        }
 
         DispatchQueue.main.async {
+            self.viewModel.discoveredWatches = candidates
             self.tableView.reloadData()
             self.appendStatus("Found \(self.devices.count) device(s). Tap the watch to connect.")
             if self.shouldAutoConnectToPreferredDevice,
@@ -1962,10 +2010,53 @@ final class ProbeViewController: UIViewController {
         }
     }
 
+    private func runCoachAnalysisIfNeeded(syncId: String) {
+        guard !syncId.isEmpty else { return }
+        if HealthDataStore.shared.cachedCoachAnalysis(syncId: syncId)?.source == "firebase_ai_logic" {
+            viewModel.aiStatus = "AI analyzed"
+            return
+        }
+
+        viewModel.aiStatus = "AI analyzing"
+        let context = HealthDataStore.shared.coachPromptContext(syncId: syncId)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let analysis = try await AICoachService.shared.analyze(syncId: syncId, contextJSON: context)
+                HealthDataStore.shared.saveCoachAnalysis(analysis)
+                await MainActor.run {
+                    self.viewModel.coachAnalysis = analysis
+                    self.loadLatestSavedSnapshotIntoDashboard(logFailures: false)
+                    self.viewModel.aiStatus = "AI analyzed"
+                    self.appendStatus("AI coach analysis saved for sync \(syncId).")
+                }
+            } catch {
+                let fallback = HealthDataStore.shared.localFallbackAnalysis(syncId: syncId)
+                HealthDataStore.shared.saveCoachAnalysis(fallback)
+                await MainActor.run {
+                    self.viewModel.coachAnalysis = fallback
+                    self.loadLatestSavedSnapshotIntoDashboard(logFailures: false)
+                    self.viewModel.aiStatus = "AI setup needed"
+                    self.appendStatus("AI coach fallback saved: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     private func applySnapshotToDashboard(_ payload: [String: Any], fileURL: URL?) {
         let latestDays = snapshotDays(from: payload)
         let days = historicalDashboardDays(fallbackDays: latestDays)
         var details: [String: MetricDetailData] = [:]
+        let syncId = payload["syncId"] as? String ?? ""
+
+        HealthDataStore.shared.ingestSnapshot(payload: payload, fileURL: fileURL)
+        if let cached = HealthDataStore.shared.cachedCoachAnalysis(syncId: syncId) {
+            viewModel.coachAnalysis = cached
+            viewModel.aiStatus = cached.source == "firebase_ai_logic" ? "AI analyzed" : "Local explanation"
+        } else if !syncId.isEmpty {
+            viewModel.coachAnalysis = HealthDataStore.shared.localFallbackAnalysis(syncId: syncId)
+            viewModel.aiStatus = "AI pending"
+        }
 
         if let device = payload["device"] as? [String: Any] {
             viewModel.deviceName = stringValue(from: device["name"])
@@ -2264,9 +2355,30 @@ final class ProbeViewController: UIViewController {
         value: String,
         detail: String,
         rows: [MetricDetailRow],
-        history: [MetricHistorySection] = []
+        history: [MetricHistorySection] = [],
+        aiExplanation: MetricAIExplanation? = nil
     ) -> MetricDetailData {
-        MetricDetailData(id: id, title: title, icon: icon, colorName: colorName, value: value, detail: detail, rows: rows, history: history)
+        let referenceRows: [MetricDetailRow]
+        if let reference = VitalReference.reference(for: id) {
+            referenceRows = [
+                MetricDetailRow("Reference", reference.shortRange, id: "\(id)-reference"),
+                MetricDetailRow("Reference note", reference.detail, id: "\(id)-reference-note")
+            ]
+        } else {
+            referenceRows = []
+        }
+
+        return MetricDetailData(
+            id: id,
+            title: title,
+            icon: icon,
+            colorName: colorName,
+            value: value,
+            detail: detail,
+            rows: rows + referenceRows,
+            history: history,
+            aiExplanation: aiExplanation ?? viewModel.coachAnalysis.metricExplanations[id] ?? MetricAIExplanation.fallback(metricId: id, value: value, title: title)
+        )
     }
 
     private func historicalDashboardDays(fallbackDays: [[String: Any]]) -> [[String: Any]] {
@@ -2624,6 +2736,7 @@ final class ProbeViewController: UIViewController {
                 self.viewModel.lastSync = syncTime
                 self.viewModel.localStorage = WatchResearchStore.shared.localStorageDetailSummary()
                 self.applyLatestSnapshotToDashboard(from: fileURL)
+                self.runCoachAnalysisIfNeeded(syncId: syncId)
                 completion(fileURL)
             } catch {
                 self.appendStatus("Local JSON save failed: \(error.localizedDescription)")

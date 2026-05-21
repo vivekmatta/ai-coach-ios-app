@@ -24,6 +24,13 @@
 	<string>Connect to the Veepoo watch for first hardware verification.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Connect to the Veepoo watch for first hardware verification.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to a local AI proxy during development testing.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

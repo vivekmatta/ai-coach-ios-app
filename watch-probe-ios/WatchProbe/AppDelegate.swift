@@ -1,5 +1,9 @@
 import UIKit
 
+#if canImport(FirebaseCore)
+import FirebaseCore
+#endif
+
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(
@@ -9,6 +13,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let bleManager = VPBleCentralManage.sharedBleManager()
         bleManager?.isLogEnable = true
         bleManager?.peripheralManage = VPPeripheralManage.shareVPPeripheralManager()
+
+#if canImport(FirebaseCore)
+        if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil,
+           FirebaseApp.app() == nil {
+            FirebaseApp.configure()
+        }
+#endif
 
         if let centralIdentifiers = launchOptions?[.bluetoothCentrals] {
             print("Bluetooth central restore identifiers: \(centralIdentifiers)")

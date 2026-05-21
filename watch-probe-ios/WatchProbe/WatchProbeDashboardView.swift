@@ -33,6 +33,7 @@ struct MetricDetailData: Identifiable, Equatable {
     let detail: String
     let rows: [MetricDetailRow]
     let history: [MetricHistorySection]
+    let aiExplanation: MetricAIExplanation?
 
     var color: Color {
         switch colorName {
@@ -44,6 +45,13 @@ struct MetricDetailData: Identifiable, Equatable {
         default: return .wpPrimary
         }
     }
+}
+
+struct WatchDeviceCandidate: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let address: String
+    let rssi: Int
 }
 
 final class WatchProbeViewModel: ObservableObject {
@@ -75,6 +83,16 @@ final class WatchProbeViewModel: ObservableObject {
     @Published var temperature = "--"
     @Published var updatedAt = "--"
     @Published var metricDetails: [String: MetricDetailData] = [:]
+    @Published var coachAnalysis: AICoachAnalysis = .empty
+    @Published var aiStatus = "Sync your watch to generate coach insights."
+    @Published var discoveredWatches: [WatchDeviceCandidate] = []
+    @Published var onboardingCompleted = UserDefaults.standard.bool(forKey: "WatchProbe.onboardingCompleted")
+    @Published var notificationPermissionStatus = "Not requested"
+    @Published var localAIProxyURL = UserDefaults.standard.string(forKey: "WatchProbe.localAIProxyURL") ?? "" {
+        didSet {
+            UserDefaults.standard.set(localAIProxyURL, forKey: "WatchProbe.localAIProxyURL")
+        }
+    }
     @Published var debugLog = ""
     @Published var showDebugLog = false
 
@@ -87,6 +105,9 @@ final class WatchProbeViewModel: ObservableObject {
     var oxygenAction: (() -> Void)?
     var stepAction: (() -> Void)?
     var temperatureAction: (() -> Void)?
+    var completeOnboardingAction: (() -> Void)?
+    var notificationPermissionAction: (() -> Void)?
+    var watchSelectAction: ((WatchDeviceCandidate) -> Void)?
 
     var wellnessScore: Int {
         var score = 55
@@ -109,26 +130,234 @@ final class WatchProbeViewModel: ObservableObject {
             .joined(separator: "\n")
         connectionState = message
     }
+
+    func completeOnboarding() {
+        onboardingCompleted = true
+        UserDefaults.standard.set(true, forKey: "WatchProbe.onboardingCompleted")
+        completeOnboardingAction?()
+    }
 }
 
 struct WatchProbeDashboardView: View {
     @ObservedObject var model: WatchProbeViewModel
 
     var body: some View {
-        TabView {
-            InsightsView(model: model)
-                .tabItem {
-                    Image(systemName: "chart.bar.xaxis")
-                    Text("Insights")
+        if !model.onboardingCompleted {
+            OnboardingRootView(model: model)
+        } else {
+            TabView {
+                DashboardView(model: model)
+                    .tabItem {
+                        Image(systemName: "house.fill")
+                        Text("Dashboard")
+                    }
+
+                InsightsView(model: model)
+                    .tabItem {
+                        Image(systemName: "chart.bar.xaxis")
+                        Text("Insights")
+                    }
+
+                ProfileDashboardView(model: model)
+                    .tabItem {
+                        Image(systemName: "person.crop.circle")
+                        Text("Profile")
+                    }
+            }
+            .accentColor(.wpPrimary)
+        }
+    }
+}
+
+private struct OnboardingRootView: View {
+    @ObservedObject var model: WatchProbeViewModel
+    @State private var page = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TabView(selection: $page) {
+                OnboardingPage(
+                    icon: "applewatch",
+                    title: "AI Coach",
+                    bodyText: "Sync your ES02 watch and turn the latest health data into a simple recovery and activity readout."
+                )
+                .tag(0)
+
+                OnboardingPage(
+                    icon: "lock.shield",
+                    title: "Your Data",
+                    bodyText: "Raw sync files stay local, and the coach uses compact summaries for explanations and next steps."
+                )
+                .tag(1)
+
+                OnboardingPermissionsPage(model: model)
+                    .tag(2)
+            }
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
+
+            HStack(spacing: 12) {
+                if page > 0 {
+                    Button(action: { page -= 1 }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 46, height: 46)
+                    }
+                    .foregroundColor(.wpPrimary)
+                    .background(Color.wpSurfaceLow)
+                    .cornerRadius(23)
                 }
 
-            ProfileDashboardView(model: model)
-                .tabItem {
-                    Image(systemName: "person.crop.circle")
-                    Text("Profile")
+                Button(action: {
+                    if page < 2 {
+                        page += 1
+                    } else {
+                        model.completeOnboarding()
+                    }
+                }) {
+                    Text(page < 2 ? "Continue" : "Open App")
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .foregroundColor(.white)
+                        .background(Color.wpPrimary)
+                        .cornerRadius(12)
                 }
+            }
+            .padding(16)
         }
-        .accentColor(.wpPrimary)
+        .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
+    }
+}
+
+private struct OnboardingPage: View {
+    let icon: String
+    let title: String
+    let bodyText: String
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            CircleIcon(systemName: icon, color: .wpPrimary)
+                .scaleEffect(1.3)
+            Text(title)
+                .font(.system(size: 32, weight: .bold))
+                .foregroundColor(.wpText)
+            Text(bodyText)
+                .font(.system(size: 17, weight: .regular))
+                .foregroundColor(.wpTextSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .padding(.horizontal, 28)
+            Spacer()
+        }
+    }
+}
+
+private struct OnboardingPermissionsPage: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Setup")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(.wpText)
+                PermissionCard(
+                    icon: "bell.badge.fill",
+                    title: "Morning sync reminder",
+                    detail: model.notificationPermissionStatus,
+                    actionTitle: "Allow Reminder",
+                    action: model.notificationPermissionAction
+                )
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        CircleIcon(systemName: "applewatch", color: .wpPrimary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(model.isConnected ? "Watch connected" : "Saved watch")
+                                .wpHeadline()
+                            Text(model.isConnected ? "\(model.deviceName) is ready" : "Look for \(model.deviceName) nearby")
+                                .wpCaption()
+                        }
+                        Spacer()
+                    }
+                    if !model.discoveredWatches.isEmpty {
+                        ForEach(model.discoveredWatches) { watch in
+                            Button(action: { model.watchSelectAction?(watch) }) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(watch.name)
+                                            .wpHeadline()
+                                        Text(watch.address)
+                                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                                            .foregroundColor(.wpTextSecondary)
+                                    }
+                                    Spacer()
+                                    Text("\(watch.rssi)")
+                                        .wpCaption()
+                                }
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            Divider()
+                        }
+                    }
+                    ActionButton(
+                        title: model.isConnected ? "Connected" : "Find Watch",
+                        color: .wpPrimary,
+                        filled: true,
+                        disabled: model.isConnected,
+                        action: model.connectAction
+                    )
+                }
+                .card()
+            }
+            .padding(16)
+        }
+    }
+}
+
+private struct PermissionCard: View {
+    let icon: String
+    let title: String
+    let detail: String
+    let actionTitle: String
+    let action: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                CircleIcon(systemName: icon, color: .wpOrange)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .wpHeadline()
+                    Text(detail)
+                        .wpCaption()
+                }
+            }
+            ActionButton(title: actionTitle, color: .wpPrimary, filled: false, disabled: false, action: action)
+        }
+        .card()
+    }
+}
+
+private struct DashboardView: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 16) {
+                    WatchStatusCard(model: model)
+                    CoachSummaryCard(model: model)
+                    WellnessScoreCard(score: model.wellnessScore)
+                    MetricsGrid(model: model)
+                }
+                .padding(16)
+            }
+            .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
+            .navigationBarTitle("Dashboard", displayMode: .inline)
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 }
 
@@ -139,9 +368,7 @@ private struct InsightsView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 16) {
-                    WatchStatusCard(model: model)
-                    WellnessScoreCard(score: model.wellnessScore)
-                    MetricsGrid(model: model)
+                    InsightGroupsView(model: model)
                 }
                 .padding(16)
             }
@@ -171,6 +398,266 @@ private struct ProfileDashboardView: View {
             .navigationBarTitle("Profile", displayMode: .inline)
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+}
+
+private struct CoachSummaryCard: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("COACH")
+                    .wpLabel()
+                Spacer()
+                Text(model.aiStatus)
+                    .wpCaption()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Text(model.coachAnalysis.overallSummary)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.wpText)
+                .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            Label(model.coachAnalysis.priority, systemImage: "target")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(.wpTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .card()
+    }
+}
+
+private struct InsightGroupsView: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            CoachInsightCards(model: model)
+            SectionPanel(title: "RECOVERY") {
+                VStack(spacing: 12) {
+                    DetailMetricCard(id: "sleep", title: "Sleep", icon: "bed.double.fill", color: .wpSecondary, value: model.sleepScore, detail: "\(model.sleepDuration) slept / \(model.sleepScoreDetail)", detailData: model.metricDetails["sleep"])
+                    HStack(spacing: 12) {
+                        DetailMetricCard(id: "hrv", title: "HRV", icon: "waveform.path", color: .wpPrimary, value: model.hrv, detail: "Heart rate variability", detailData: model.metricDetails["hrv"])
+                        DetailMetricCard(id: "temperature", title: "Temperature", icon: "thermometer", color: .wpRed, value: model.temperature, detail: "Body / skin", detailData: model.metricDetails["temperature"])
+                    }
+                }
+            }
+
+            SectionPanel(title: "CARDIO") {
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        DetailMetricCard(id: "heartRate", title: "Heart Rate", icon: "heart.fill", color: .wpRed, value: model.heartRate, detail: "Latest saved or live", detailData: model.metricDetails["heartRate"])
+                        DetailMetricCard(id: "oxygen", title: "Blood Oxygen", icon: "drop.fill", color: .wpBlue, value: model.oxygen, detail: "SpO2", detailData: model.metricDetails["oxygen"])
+                    }
+                    HStack(spacing: 12) {
+                        DetailMetricCard(id: "bloodPressure", title: "Blood Pressure", icon: "gauge.with.dots.needle.33percent", color: .wpRed, value: model.bloodPressure, detail: "Systolic / diastolic", detailData: model.metricDetails["bloodPressure"])
+                        DetailMetricCard(id: "ecg", title: "ECG", icon: "waveform.path.ecg", color: .wpPrimary, value: model.ecg, detail: "Offline ECG", detailData: model.metricDetails["ecg"])
+                    }
+                }
+            }
+
+            SectionPanel(title: "ACTIVITY & DATA") {
+                VStack(spacing: 12) {
+                    DetailMetricCard(id: "activity", title: "Activity", icon: "figure.walk", color: .wpOrange, value: model.steps, detail: "\(model.distance) km / \(model.calories) kcal", detailData: model.metricDetails["activity"])
+                    HStack(spacing: 12) {
+                        DetailMetricCard(id: "bloodGlucose", title: "Glucose", icon: "testtube.2", color: .wpGreen, value: model.bloodGlucose, detail: "Latest stored value", detailData: model.metricDetails["bloodGlucose"])
+                        DetailMetricCard(id: "battery", title: "Battery", icon: "battery.100", color: .wpGreen, value: model.battery, detail: "Watch", detailData: model.metricDetails["battery"])
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct CoachInsightCards: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        Group {
+            if !model.coachAnalysis.insightCards.isEmpty {
+                SectionPanel(title: "COACH INSIGHTS") {
+                    VStack(spacing: 10) {
+                        ForEach(model.coachAnalysis.insightCards.sorted { $0.priority < $1.priority }) { insight in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(insight.title)
+                                    .wpHeadline()
+                                Text(insight.body)
+                                    .wpCaption()
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .card()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct DashboardMetricExplanation: View {
+    let detail: MetricDetailData
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            CircleIcon(systemName: detail.icon, color: detail.color)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(detail.title.uppercased())
+                        .wpLabel()
+                    Spacer()
+                    Text(detail.value)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(detail.color)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.65)
+                }
+                Text(detail.aiExplanation?.shortExplanation ?? detail.detail)
+                    .wpCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+                if let reference = VitalReference.reference(for: detail.id) {
+                    Text("Reference: \(reference.shortRange)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.wpTextSecondary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                }
+                HStack {
+                    Text(detail.aiExplanation?.dataQuality.capitalized ?? "No AI note")
+                        .wpCaption()
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.wpTextSecondary)
+                }
+            }
+        }
+    }
+}
+
+private struct DashboardMetricList: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    private let metricOrder = [
+        "sleep",
+        "heartRate",
+        "oxygen",
+        "hrv",
+        "bloodPressure",
+        "activity",
+        "temperature",
+        "bloodGlucose",
+        "ecg",
+        "battery",
+        "updated"
+    ]
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(metricOrder, id: \.self) { id in
+                if let detail = model.metricDetails[id] {
+                    NavigationLink(destination: MetricDetailView(detail: detail)) {
+                        DashboardMetricExplanation(detail: detail)
+                            .card()
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            if model.metricDetails.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No synced metrics yet")
+                        .wpHeadline()
+                    Text("Connect the watch and run a sync to populate metric explanations.")
+                        .wpCaption()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card()
+            }
+        }
+    }
+}
+
+private struct DashboardMetricsSection: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        SectionPanel(title: "LATEST METRICS") {
+            DashboardMetricList(model: model)
+        }
+    }
+}
+
+private struct MetricsGrid: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            DashboardMetricsSection(model: model)
+        }
+    }
+}
+
+private struct DetailMetricCard: View {
+    let id: String
+    let title: String
+    let icon: String
+    let color: Color
+    let value: String
+    let detail: String
+    let detailData: MetricDetailData?
+
+    var body: some View {
+        NavigationLink(destination: MetricDetailView(detail: resolvedDetail)) {
+            MetricCardContent(detail: resolvedDetail)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private var resolvedDetail: MetricDetailData {
+        detailData ?? MetricDetailData(
+            id: id,
+            title: title,
+            icon: icon,
+            colorName: "primary",
+            value: value,
+            detail: detail,
+            rows: [MetricDetailRow("Status", "No saved detail yet")],
+            history: [],
+            aiExplanation: MetricAIExplanation.fallback(metricId: id, value: value, title: title)
+        )
+    }
+}
+
+private struct MetricCardContent: View {
+    let detail: MetricDetailData
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: detail.icon)
+                    .foregroundColor(detail.color)
+                Text(detail.title.uppercased())
+                    .wpLabel()
+                    .foregroundColor(.wpTextSecondary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.wpTextSecondary)
+            }
+            Text(detail.value)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.wpText)
+                .lineLimit(2)
+                .minimumScaleFactor(0.65)
+            Text(detail.aiExplanation?.shortExplanation ?? detail.detail)
+                .wpCaption()
+                .lineLimit(3)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
     }
 }
 
@@ -231,115 +718,6 @@ private struct WellnessScoreCard: View {
     }
 }
 
-private struct MetricsGrid: View {
-    @ObservedObject var model: WatchProbeViewModel
-
-    var body: some View {
-        VStack(spacing: 12) {
-            DetailMetricCard(
-                id: "sleep",
-                title: "Sleep",
-                icon: "bed.double.fill",
-                color: .wpSecondary,
-                value: model.sleepScore,
-                detail: "\(model.sleepDuration) slept / \(model.sleepScoreDetail)",
-                detailData: model.metricDetails["sleep"]
-            )
-            HStack(spacing: 12) {
-                DetailMetricCard(id: "heartRate", title: "Heart Rate", icon: "heart.fill", color: .wpRed, value: model.heartRate, detail: "Latest saved or live", detailData: model.metricDetails["heartRate"])
-                DetailMetricCard(id: "oxygen", title: "Blood Oxygen", icon: "drop.fill", color: .wpBlue, value: model.oxygen, detail: "SpO2", detailData: model.metricDetails["oxygen"])
-            }
-            HStack(spacing: 12) {
-                DetailMetricCard(id: "hrv", title: "HRV", icon: "waveform.path", color: .wpPrimary, value: model.hrv, detail: "Heart rate variability", detailData: model.metricDetails["hrv"])
-                DetailMetricCard(id: "bloodPressure", title: "Blood Pressure", icon: "gauge.with.dots.needle.33percent", color: .wpRed, value: model.bloodPressure, detail: "Systolic / diastolic", detailData: model.metricDetails["bloodPressure"])
-            }
-            DetailMetricCard(
-                id: "activity",
-                title: "Activity",
-                icon: "figure.walk",
-                color: .wpOrange,
-                value: model.steps,
-                detail: "\(model.distance) km / \(model.calories) kcal",
-                detailData: model.metricDetails["activity"]
-            )
-            HStack(spacing: 12) {
-                DetailMetricCard(id: "temperature", title: "Temperature", icon: "thermometer", color: .wpRed, value: model.temperature, detail: "Body / skin", detailData: model.metricDetails["temperature"])
-                DetailMetricCard(id: "bloodGlucose", title: "Glucose", icon: "testtube.2", color: .wpGreen, value: model.bloodGlucose, detail: "Latest stored value", detailData: model.metricDetails["bloodGlucose"])
-            }
-            HStack(spacing: 12) {
-                DetailMetricCard(id: "ecg", title: "ECG", icon: "waveform.path.ecg", color: .wpPrimary, value: model.ecg, detail: "Offline ECG", detailData: model.metricDetails["ecg"])
-                DetailMetricCard(id: "battery", title: "Battery", icon: "battery.100", color: .wpGreen, value: model.battery, detail: "Watch", detailData: model.metricDetails["battery"])
-            }
-            DetailMetricCard(id: "updated", title: "Updated", icon: "clock", color: .wpSecondary, value: model.updatedAt, detail: model.connectionState, detailData: model.metricDetails["updated"])
-        }
-    }
-}
-
-private struct DetailMetricCard: View {
-    let id: String
-    let title: String
-    let icon: String
-    let color: Color
-    let value: String
-    let detail: String
-    let detailData: MetricDetailData?
-
-    var body: some View {
-        NavigationLink(destination: MetricDetailView(detail: resolvedDetail)) {
-            MetricCardContent(title: title, icon: icon, color: color, value: value, detail: detail)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-
-    private var resolvedDetail: MetricDetailData {
-        detailData ?? MetricDetailData(
-            id: id,
-            title: title,
-            icon: icon,
-            colorName: "primary",
-            value: value,
-            detail: detail,
-            rows: [MetricDetailRow("Status", "No saved detail yet")],
-            history: []
-        )
-    }
-}
-
-private struct MetricCardContent: View {
-    let title: String
-    let icon: String
-    let color: Color
-    let value: String
-    let detail: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                Text(title.uppercased())
-                    .wpLabel()
-                    .foregroundColor(.wpTextSecondary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.wpTextSecondary)
-            }
-            Text(value)
-                .font(.system(size: 22, weight: .bold))
-                .foregroundColor(.wpText)
-                .lineLimit(2)
-                .minimumScaleFactor(0.65)
-            Text(detail)
-                .wpCaption()
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card()
-    }
-}
-
 private struct MetricDetailView: View {
     let detail: MetricDetailData
 
@@ -364,6 +742,38 @@ private struct MetricDetailView: View {
 
                 SectionPanel(title: "LATEST DATA") {
                     MetricRowsCard(rows: detail.rows)
+                }
+
+                SectionPanel(title: "WHAT IT MEANS") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(detail.aiExplanation?.shortExplanation ?? detail.detail)
+                            .wpHeadline()
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(detail.aiExplanation?.details ?? "More synced history will make this explanation more useful.")
+                            .wpCaption()
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 10) {
+                            StatusPill(text: "Confidence: \(detail.aiExplanation?.confidence ?? "low")", color: .wpPrimary)
+                            StatusPill(text: "Data: \(detail.aiExplanation?.dataQuality ?? "missing")", color: .wpOrange)
+                        }
+                    }
+                    .card()
+                }
+
+                if let reference = VitalReference.reference(for: detail.id) {
+                    SectionPanel(title: "REFERENCE RANGE") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(reference.shortRange)
+                                .wpHeadline()
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(reference.detail)
+                                .wpCaption()
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(reference.source)
+                                .wpLabel()
+                        }
+                        .card()
+                    }
                 }
 
                 if !detail.history.isEmpty {
@@ -488,24 +898,42 @@ private struct SettingsSection: View {
 
     var body: some View {
         SectionPanel(title: "APP SETTINGS") {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Auto-sync when app opens")
-                        .wpHeadline()
-                    Text("Runs a quick sync after the saved watch connects.")
-                        .wpCaption()
-                }
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { model.autoSyncEnabled },
-                        set: { model.autoSyncAction?($0) }
+            VStack(spacing: 12) {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Auto-sync when app opens")
+                            .wpHeadline()
+                        Text("Runs a quick sync after the saved watch connects.")
+                            .wpCaption()
+                    }
+                    Spacer()
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.autoSyncEnabled },
+                            set: { model.autoSyncAction?($0) }
+                        )
                     )
-                )
-                .labelsHidden()
+                    .labelsHidden()
+                }
+                .card()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Local AI proxy")
+                        .wpHeadline()
+                    Text("For testing without Firebase, run the Mac proxy and enter its URL.")
+                        .wpCaption()
+                    TextField("http://your-mac-ip:8790", text: $model.localAIProxyURL)
+                        .font(.system(size: 14, weight: .regular, design: .monospaced))
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .keyboardType(.URL)
+                        .padding(10)
+                        .background(Color.wpSurface)
+                        .cornerRadius(8)
+                }
+                .card()
             }
-            .card()
         }
     }
 }

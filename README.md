@@ -42,6 +42,32 @@ The app-side auto-sync interval is 10 minutes while the phone app is open/connec
 
 Do not use `veepooSDKClearDeviceData` for the normal sync cycle. The SDK header says the bracelet shuts down after clearing and there is no success callback. Keep watch data on-device and avoid duplicate imports with local sync snapshots/watermarks instead.
 
+## Local AI Proxy For Testing
+
+For testing without Firebase, run the local Gemini proxy from this repo:
+
+```bash
+GEMINI_API_KEY=your-key node server/coach-ai-proxy.mjs
+```
+
+The proxy can also use the preserved Vertex AI service-account JSON:
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=secrets/google-service-account.json node server/coach-ai-proxy.mjs
+```
+
+On a physical iPhone, enter the Mac's LAN URL in the app under `Profile -> App Settings -> Local AI proxy`, for example:
+
+`http://192.168.1.25:8790`
+
+The app tries Firebase AI Logic first. If `GoogleService-Info.plist` is missing, it falls back to the local proxy. Do not use the local proxy as a production research backend.
+
+## AI Coach Behavior
+
+After each saved watch sync, the app stores compact metric summaries in SQLite and asks the AI coach for Dashboard explanations and Insights cards. The prompt includes adult vital reference ranges for context, but tells the model not to diagnose or invent unsupported conclusions.
+
+The coach context now includes timestamp-linked sleep windows and heart-rate samples. This lets the AI distinguish heart-rate readings that happened during recorded sleep from readings outside sleep, and it should say the relationship is unclear when timestamps do not overlap.
+
 ## Dashboard Behavior
 
 The first page now shows the latest saved values for sleep, HRV, blood oxygen, blood pressure, glucose, heart rate, activity, temperature, ECG, and battery. Each card is tappable and opens a detail page with:

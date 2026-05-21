@@ -12,6 +12,13 @@
 		2A0000702C00000000000001 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000712C00000000000001 /* SceneDelegate.swift */; };
 		2A0000722C00000000000001 /* WatchResearchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000732C00000000000001 /* WatchResearchStore.swift */; };
 		2A0000742C00000000000001 /* WatchProbeDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000752C00000000000001 /* WatchProbeDashboardView.swift */; };
+		2A0000762C00000000000001 /* AICoachModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000772C00000000000001 /* AICoachModels.swift */; };
+		2A0000782C00000000000001 /* AICoachService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000792C00000000000001 /* AICoachService.swift */; };
+		2A00007A2C00000000000001 /* HealthDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A00007B2C00000000000001 /* HealthDataStore.swift */; };
+		2A00007C2C00000000000001 /* CoachReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A00007D2C00000000000001 /* CoachReminderScheduler.swift */; };
+		2A00007E2C00000000000001 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2A00007F2C00000000000001 /* FirebaseCore */; };
+		2A0000802C00000000000001 /* FirebaseAILogic in Frameworks */ = {isa = PBXBuildFile; productRef = 2A0000812C00000000000001 /* FirebaseAILogic */; };
+		2A0000842C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */; };
 		2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000062C00000000000001 /* VeepooBleSDK.framework */; };
 		2A0000302C00000000000001 /* ABParTool.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000202C00000000000001 /* ABParTool.framework */; };
 		2A0000332C00000000000001 /* ZipZap.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000232C00000000000001 /* ZipZap.framework */; };
@@ -60,6 +67,11 @@
 		2A0000712C00000000000001 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		2A0000732C00000000000001 /* WatchResearchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchResearchStore.swift; sourceTree = "<group>"; };
 		2A0000752C00000000000001 /* WatchProbeDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchProbeDashboardView.swift; sourceTree = "<group>"; };
+		2A0000772C00000000000001 /* AICoachModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachModels.swift; sourceTree = "<group>"; };
+		2A0000792C00000000000001 /* AICoachService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachService.swift; sourceTree = "<group>"; };
+		2A00007B2C00000000000001 /* HealthDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataStore.swift; sourceTree = "<group>"; };
+		2A00007D2C00000000000001 /* CoachReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachReminderScheduler.swift; sourceTree = "<group>"; };
+		2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "VPBleCentralManage+WatchProbeRestoreSilencer.m"; sourceTree = "<group>"; };
 		2A0000062C00000000000001 /* VeepooBleSDK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = VeepooBleSDK.framework; sourceTree = "<group>"; };
 		2A0000092C00000000000001 /* WatchProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A00000A2C00000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -95,6 +107,8 @@
 					2A0000302C00000000000001 /* ABParTool.framework in Frameworks */,
 					2A0000332C00000000000001 /* ZipZap.framework in Frameworks */,
 					2A0000382C00000000000001 /* GRDFUSDK.framework in Frameworks */,
+					2A00007E2C00000000000001 /* FirebaseCore in Frameworks */,
+					2A0000802C00000000000001 /* FirebaseAILogic in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -117,6 +131,11 @@
 				2A0000042C00000000000001 /* ProbeViewController.swift */,
 				2A0000732C00000000000001 /* WatchResearchStore.swift */,
 				2A0000752C00000000000001 /* WatchProbeDashboardView.swift */,
+				2A0000772C00000000000001 /* AICoachModels.swift */,
+				2A0000792C00000000000001 /* AICoachService.swift */,
+				2A00007B2C00000000000001 /* HealthDataStore.swift */,
+				2A00007D2C00000000000001 /* CoachReminderScheduler.swift */,
+				2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */,
 				2A00000B2C00000000000001 /* WatchProbe-Bridging-Header.h */,
 				2A00000A2C00000000000001 /* Info.plist */,
 				2A0000062C00000000000001 /* VeepooBleSDK.framework */,
@@ -194,6 +213,10 @@
 			name = WatchProbe;
 			productName = WatchProbe;
 			productReference = 2A0000092C00000000000001 /* WatchProbe.app */;
+			packageProductDependencies = (
+				2A00007F2C00000000000001 /* FirebaseCore */,
+				2A0000812C00000000000001 /* FirebaseAILogic */,
+			);
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -223,6 +246,9 @@
 			productRefGroup = 2A00000F2C00000000000001 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
+			packageReferences = (
+				2A0000822C00000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			targets = (
 				2A0000102C00000000000001 /* WatchProbe */,
 			);
@@ -239,6 +265,11 @@
 				2A0000032C00000000000001 /* ProbeViewController.swift in Sources */,
 				2A0000722C00000000000001 /* WatchResearchStore.swift in Sources */,
 				2A0000742C00000000000001 /* WatchProbeDashboardView.swift in Sources */,
+				2A0000762C00000000000001 /* AICoachModels.swift in Sources */,
+				2A0000782C00000000000001 /* AICoachService.swift in Sources */,
+				2A00007A2C00000000000001 /* HealthDataStore.swift in Sources */,
+				2A00007C2C00000000000001 /* CoachReminderScheduler.swift in Sources */,
+				2A0000842C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m in Sources */,
 				2A0000502C00000000000001 /* FMDatabase.m in Sources */,
 				2A0000512C00000000000001 /* FMDatabaseAdditions.m in Sources */,
 				2A0000522C00000000000001 /* FMDatabasePool.m in Sources */,
@@ -310,7 +341,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -364,7 +395,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
@@ -386,7 +417,7 @@
 					"$(PROJECT_DIR)/WatchProbe",
 				);
 				INFOPLIST_FILE = WatchProbe/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -418,7 +449,7 @@
 					"$(PROJECT_DIR)/WatchProbe",
 				);
 				INFOPLIST_FILE = WatchProbe/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -461,6 +492,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2A0000822C00000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2A00007F2C00000000000001 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2A0000822C00000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		2A0000812C00000000000001 /* FirebaseAILogic */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2A0000822C00000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAILogic;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2A0000132C00000000000001 /* Project object */;
 }
