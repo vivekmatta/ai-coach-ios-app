@@ -2012,8 +2012,23 @@ final class ProbeViewController: UIViewController {
 
     private func runCoachAnalysisIfNeeded(syncId: String) {
         guard !syncId.isEmpty else { return }
-        if HealthDataStore.shared.cachedCoachAnalysis(syncId: syncId)?.source == "firebase_ai_logic" {
+        let contextHash = HealthDataStore.shared.coachPromptContextHash(syncId: syncId)
+        if let cached = HealthDataStore.shared.cachedCoachAnalysis(syncId: syncId),
+           cached.isAIBacked {
+            viewModel.coachAnalysis = cached
             viewModel.aiStatus = "AI analyzed"
+            return
+        }
+        if let cached = HealthDataStore.shared.cachedCoachAnalysis(contextHash: contextHash) {
+            let reused = cached.reusedForSync(
+                syncId: syncId,
+                generatedAt: HealthDataStore.shared.currentTimestamp()
+            )
+            HealthDataStore.shared.saveCoachAnalysis(reused, contextHash: contextHash)
+            viewModel.coachAnalysis = reused
+            loadLatestSavedSnapshotIntoDashboard(logFailures: false)
+            viewModel.aiStatus = "AI reused"
+            appendStatus("AI coach analysis reused for unchanged sync data.")
             return
         }
 
@@ -2023,7 +2038,7 @@ final class ProbeViewController: UIViewController {
             guard let self else { return }
             do {
                 let analysis = try await AICoachService.shared.analyze(syncId: syncId, contextJSON: context)
-                HealthDataStore.shared.saveCoachAnalysis(analysis)
+                HealthDataStore.shared.saveCoachAnalysis(analysis, contextHash: contextHash)
                 await MainActor.run {
                     self.viewModel.coachAnalysis = analysis
                     self.loadLatestSavedSnapshotIntoDashboard(logFailures: false)
@@ -2032,7 +2047,7 @@ final class ProbeViewController: UIViewController {
                 }
             } catch {
                 let fallback = HealthDataStore.shared.localFallbackAnalysis(syncId: syncId)
-                HealthDataStore.shared.saveCoachAnalysis(fallback)
+                HealthDataStore.shared.saveCoachAnalysis(fallback, contextHash: contextHash)
                 await MainActor.run {
                     self.viewModel.coachAnalysis = fallback
                     self.loadLatestSavedSnapshotIntoDashboard(logFailures: false)
@@ -2052,7 +2067,7 @@ final class ProbeViewController: UIViewController {
         HealthDataStore.shared.ingestSnapshot(payload: payload, fileURL: fileURL)
         if let cached = HealthDataStore.shared.cachedCoachAnalysis(syncId: syncId) {
             viewModel.coachAnalysis = cached
-            viewModel.aiStatus = cached.source == "firebase_ai_logic" ? "AI analyzed" : "Local explanation"
+            viewModel.aiStatus = cached.isAIBacked ? "AI analyzed" : "Local explanation"
         } else if !syncId.isEmpty {
             viewModel.coachAnalysis = HealthDataStore.shared.localFallbackAnalysis(syncId: syncId)
             viewModel.aiStatus = "AI pending"

@@ -152,12 +152,6 @@ struct WatchProbeDashboardView: View {
                         Text("Dashboard")
                     }
 
-                InsightsView(model: model)
-                    .tabItem {
-                        Image(systemName: "chart.bar.xaxis")
-                        Text("Insights")
-                    }
-
                 ProfileDashboardView(model: model)
                     .tabItem {
                         Image(systemName: "person.crop.circle")
@@ -349,7 +343,7 @@ private struct DashboardView: View {
                 VStack(spacing: 16) {
                     WatchStatusCard(model: model)
                     CoachSummaryCard(model: model)
-                    WellnessScoreCard(score: model.wellnessScore)
+                    WellnessScoreCard(score: model.coachAnalysis.overallScore ?? model.wellnessScore)
                     MetricsGrid(model: model)
                 }
                 .padding(16)
@@ -420,10 +414,20 @@ private struct CoachSummaryCard: View {
                 .foregroundColor(.wpText)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
-            Label(model.coachAnalysis.priority, systemImage: "target")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(.wpTextSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Suggested action", systemImage: "target")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.wpTextSecondary)
+                Text(model.coachAnalysis.priority)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.wpText)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !model.coachAnalysis.coachMessage.isEmpty {
+                    Text(model.coachAnalysis.coachMessage)
+                        .wpCaption()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .card()
     }
@@ -558,11 +562,20 @@ private struct DashboardMetricList: View {
         VStack(spacing: 12) {
             ForEach(metricOrder, id: \.self) { id in
                 if let detail = model.metricDetails[id] {
-                    NavigationLink(destination: MetricDetailView(detail: detail)) {
-                        DashboardMetricExplanation(detail: detail)
-                            .card()
+                    VStack(spacing: 8) {
+                        NavigationLink(destination: MetricDetailView(detail: detail)) {
+                            DashboardMetricExplanation(detail: detail)
+                                .card()
+                        }
+                        .buttonStyle(PlainButtonStyle())
+
+                        if let action = detail.suggestedActionText {
+                            NavigationLink(destination: MetricActionView(detail: detail, action: action)) {
+                                SuggestedActionSummaryCard(detail: detail, action: action)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
                     }
-                    .buttonStyle(PlainButtonStyle())
                 }
             }
             if model.metricDetails.isEmpty {
@@ -576,6 +589,36 @@ private struct DashboardMetricList: View {
                 .card()
             }
         }
+    }
+}
+
+private struct SuggestedActionSummaryCard: View {
+    let detail: MetricDetailData
+    let action: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            CircleIcon(systemName: "target", color: detail.color)
+                .scaleEffect(0.82)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("SUGGESTED ACTION")
+                        .wpLabel()
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.wpTextSecondary)
+                }
+                Text(action)
+                    .wpCaption()
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.wpSurface)
+        .cornerRadius(12)
     }
 }
 
@@ -596,6 +639,82 @@ private struct MetricsGrid: View {
         VStack(spacing: 12) {
             DashboardMetricsSection(model: model)
         }
+    }
+}
+
+private struct MetricActionView: View {
+    let detail: MetricDetailData
+    let action: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    CircleIcon(systemName: "target", color: detail.color)
+                    Text("Suggested Action")
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(.wpText)
+                    Text(action)
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundColor(.wpText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(detail.title)
+                        .wpCaption()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card()
+
+                SectionPanel(title: "WHY THIS ACTION") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(detail.actionReasonText)
+                            .wpCaption()
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !historyEvidence.isEmpty {
+                            Divider()
+                            Text("Recent saved data")
+                                .wpLabel()
+                            Text(historyEvidence)
+                                .wpCaption()
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .card()
+                }
+
+                SectionPanel(title: "LATEST DATA") {
+                    MetricRowsCard(rows: detail.rows)
+                }
+
+                if let reference = VitalReference.reference(for: detail.id) {
+                    SectionPanel(title: "REFERENCE RANGE") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(reference.shortRange)
+                                .wpHeadline()
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(reference.detail)
+                                .wpCaption()
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(reference.source)
+                                .wpLabel()
+                        }
+                        .card()
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
+        .navigationBarTitle(Text(detail.title), displayMode: .inline)
+    }
+
+    private var historyEvidence: String {
+        let sections = detail.history.prefix(3)
+        guard !sections.isEmpty else { return "" }
+        return sections.map { section in
+            let values = section.rows.prefix(3).map { "\($0.label): \($0.value)" }.joined(separator: ", ")
+            return "\(section.title) - \(values)"
+        }
+        .joined(separator: "\n")
     }
 }
 
@@ -745,19 +864,7 @@ private struct MetricDetailView: View {
                 }
 
                 SectionPanel(title: "WHAT IT MEANS") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(detail.aiExplanation?.shortExplanation ?? detail.detail)
-                            .wpHeadline()
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(detail.aiExplanation?.details ?? "More synced history will make this explanation more useful.")
-                            .wpCaption()
-                            .fixedSize(horizontal: false, vertical: true)
-                        HStack(spacing: 10) {
-                            StatusPill(text: "Confidence: \(detail.aiExplanation?.confidence ?? "low")", color: .wpPrimary)
-                            StatusPill(text: "Data: \(detail.aiExplanation?.dataQuality ?? "missing")", color: .wpOrange)
-                        }
-                    }
-                    .card()
+                    MetricCoachExplanationCard(detail: detail)
                 }
 
                 if let reference = VitalReference.reference(for: detail.id) {
@@ -777,17 +884,12 @@ private struct MetricDetailView: View {
                 }
 
                 if !detail.history.isEmpty {
-                    SectionPanel(title: "HISTORY") {
-                        VStack(spacing: 12) {
-                            ForEach(detail.history) { section in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(section.title)
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(.wpText)
-                                    MetricRowsCard(rows: section.rows)
-                                }
-                            }
-                        }
+                    SectionPanel(title: "PREVIOUS DATA") {
+                        MetricHistorySummaryCard(detail: detail)
+                    }
+
+                    SectionPanel(title: "HISTORY BROWSER") {
+                        MetricHistoryBrowser(sections: detail.history)
                     }
                 }
             }
@@ -795,6 +897,195 @@ private struct MetricDetailView: View {
         }
         .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
         .navigationBarTitle(Text(detail.title), displayMode: .inline)
+    }
+}
+
+private struct MetricCoachExplanationCard: View {
+    let detail: MetricDetailData
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(detail.aiExplanation?.shortExplanation ?? detail.detail)
+                .wpHeadline()
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(longExplanation)
+                .wpCaption()
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !historyEvidence.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Previous data backing this up")
+                        .wpLabel()
+                    Text(historyEvidence)
+                        .wpCaption()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 10) {
+                StatusPill(text: "Confidence: \(detail.aiExplanation?.confidence ?? "low")", color: .wpPrimary)
+                StatusPill(text: "Data: \(detail.aiExplanation?.dataQuality ?? "missing")", color: .wpOrange)
+            }
+        }
+        .card()
+    }
+
+    private var longExplanation: String {
+        let details = detail.aiExplanation?.details ?? "More synced history will make this explanation more useful."
+        let cleaned = details.removingSuggestedActionLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else {
+            return "More synced history will make this explanation more useful."
+        }
+        return cleaned
+    }
+
+    private var historyEvidence: String {
+        let sections = detail.history.prefix(3)
+        guard !sections.isEmpty else { return "" }
+        return sections.map { section in
+            let values = section.rows.prefix(3).map { "\($0.label): \($0.value)" }.joined(separator: ", ")
+            return "\(section.title) - \(values)"
+        }
+        .joined(separator: "\n")
+    }
+}
+
+private struct MetricHistorySummaryCard: View {
+    let detail: MetricDetailData
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                HistoryStat(title: "Days / groups", value: "\(detail.history.count)")
+                HistoryStat(title: "Saved rows", value: "\(detail.history.reduce(0) { $0 + $1.rows.count })")
+            }
+
+            if let latest = detail.history.first {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Latest saved group")
+                        .wpLabel()
+                    Text(latest.title)
+                        .wpHeadline()
+                    MetricRowsCard(rows: Array(latest.rows.prefix(5)))
+                }
+            }
+        }
+        .card()
+    }
+}
+
+private struct HistoryStat: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .wpLabel()
+            Text(value)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(.wpText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.wpSurface)
+        .cornerRadius(10)
+    }
+}
+
+private struct MetricHistoryBrowser: View {
+    let sections: [MetricHistorySection]
+    @State private var expandedSectionIds: Set<String> = []
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ForEach(sections) { section in
+                DisclosureGroup(
+                    isExpanded: Binding(
+                        get: { expandedSectionIds.contains(section.id) },
+                        set: { isExpanded in
+                            if isExpanded {
+                                expandedSectionIds.insert(section.id)
+                            } else {
+                                expandedSectionIds.remove(section.id)
+                            }
+                        }
+                    )
+                ) {
+                    MetricRowsCard(rows: section.rows)
+                        .padding(.top, 8)
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(section.title)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.wpText)
+                            Text("\(section.rows.count) saved value(s)")
+                                .wpCaption()
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 6)
+                }
+                .accentColor(.wpPrimary)
+                .padding(12)
+                .background(Color.wpSurface)
+                .cornerRadius(10)
+            }
+        }
+    }
+}
+
+private extension MetricDetailData {
+    var suggestedActionText: String? {
+        let direct = aiExplanation?.suggestedAction?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let direct, !direct.isEmpty {
+            return direct
+        }
+
+        let parsed = aiExplanation?.details.parsedSuggestedAction?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let parsed, !parsed.isEmpty {
+            return parsed
+        }
+        return nil
+    }
+
+    var actionReasonText: String {
+        let summary = aiExplanation?.shortExplanation ?? detail
+        let details = aiExplanation?.details.removingSuggestedActionLine.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if details.isEmpty || details == summary {
+            return summary
+        }
+        return "\(summary)\n\n\(details)"
+    }
+}
+
+private extension String {
+    var parsedSuggestedAction: String? {
+        let markers = ["Suggested action:", "suggested_action:"]
+        for marker in markers {
+            guard let range = range(of: marker, options: [.caseInsensitive]) else { continue }
+            return String(self[range.upperBound...])
+                .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+                .first
+                .map(String.init)
+        }
+        return nil
+    }
+
+    var removingSuggestedActionLine: String {
+        split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { line in
+                !line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                    .hasPrefix("suggested action:")
+            }
+            .joined(separator: "\n")
     }
 }
 

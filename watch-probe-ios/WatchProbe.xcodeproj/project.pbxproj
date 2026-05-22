@@ -19,6 +19,7 @@
 		2A00007E2C00000000000001 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2A00007F2C00000000000001 /* FirebaseCore */; };
 		2A0000802C00000000000001 /* FirebaseAILogic in Frameworks */ = {isa = PBXBuildFile; productRef = 2A0000812C00000000000001 /* FirebaseAILogic */; };
 		2A0000842C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */; };
+		2A0000862C00000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2A0000852C00000000000001 /* Assets.xcassets */; };
 		2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000062C00000000000001 /* VeepooBleSDK.framework */; };
 		2A0000302C00000000000001 /* ABParTool.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000202C00000000000001 /* ABParTool.framework */; };
 		2A0000332C00000000000001 /* ZipZap.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000232C00000000000001 /* ZipZap.framework */; };
@@ -72,6 +73,7 @@
 		2A00007B2C00000000000001 /* HealthDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataStore.swift; sourceTree = "<group>"; };
 		2A00007D2C00000000000001 /* CoachReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachReminderScheduler.swift; sourceTree = "<group>"; };
 		2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "VPBleCentralManage+WatchProbeRestoreSilencer.m"; sourceTree = "<group>"; };
+		2A0000852C00000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2A0000062C00000000000001 /* VeepooBleSDK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = VeepooBleSDK.framework; sourceTree = "<group>"; };
 		2A0000092C00000000000001 /* WatchProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A00000A2C00000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -138,6 +140,7 @@
 				2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */,
 				2A00000B2C00000000000001 /* WatchProbe-Bridging-Header.h */,
 				2A00000A2C00000000000001 /* Info.plist */,
+				2A0000852C00000000000001 /* Assets.xcassets */,
 				2A0000062C00000000000001 /* VeepooBleSDK.framework */,
 				2A0000202C00000000000001 /* ABParTool.framework */,
 				2A0000212C00000000000001 /* JLDialUnit.framework */,
@@ -203,6 +206,7 @@
 			buildConfigurationList = 2A0000112C00000000000001 /* Build configuration list for PBXNativeTarget "WatchProbe" */;
 			buildPhases = (
 				2A0000122C00000000000001 /* Sources */,
+				2A0000872C00000000000001 /* Resources */,
 				2A00000C2C00000000000001 /* Frameworks */,
 				2A0000082C00000000000001 /* Embed Frameworks */,
 			);
@@ -254,6 +258,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		2A0000872C00000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2A0000862C00000000000001 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		2A0000122C00000000000001 /* Sources */ = {

@@ -20,7 +20,7 @@ Latest verified result:
 - charge state: `0`, normal/not charging
 - local sync files: saved under `Library/Application Support/WatchResearchData`
 - current sync mode: SDK base daily sync first, direct reads as fallback
-- dashboard: loads latest saved JSON on app launch/foreground and shows tappable metric detail/history pages
+- dashboard: loads latest saved JSON on app launch/foreground, shows tappable metric detail/history pages, and shows separate suggested-action cards below related metrics
 
 ## Why Native iOS First
 
@@ -51,6 +51,7 @@ The iPhone simulator is not a valid target for this first test. It cannot connec
 8. Let auto-sync finish or tap sync now.
 9. Export the latest JSON snapshot when needed.
 10. Tap any dashboard card to inspect latest data and local history for that metric.
+11. Tap a suggested-action card to inspect the recommendation and why it matches the synced data.
 
 ## What Changed On May 18-19, 2026
 
@@ -65,6 +66,15 @@ The iPhone simulator is not a valid target for this first test. It cannot connec
 - Added tappable metric cards with latest data plus history sections grouped from saved local JSON.
 - Added local Apple-style sleep score, sleep duration, sleep time, wake time, deep/light/awake time, and wake event display.
 - Removed the direct `JL_BLEKit` app link while keeping the vendor-required dial/DFU frameworks embedded.
+
+## What Changed On May 22, 2026
+
+- Replaced the Insights tab with deeper tap-through Dashboard cards and Profile.
+- Updated the AI coach prompt to return structured JSON with category scores, timestamp-aware correlations, warnings, coach message, and suggested actions.
+- Moved suggested actions out of metric cards and into separate dashboard cards that open an action explanation view.
+- Added longer metric detail explanations with previous-data context and reference ranges where available.
+- Added AI analysis reuse for unchanged health data using a SHA-256 coach-context hash. Changed sync data still runs through the newest AI prompt.
+- Added `WatchProbe/Assets.xcassets/Logo.imageset` for in-app logo artwork.
 
 ## Vendor Demo Cross-Check
 

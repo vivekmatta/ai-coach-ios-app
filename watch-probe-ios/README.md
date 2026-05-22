@@ -21,6 +21,10 @@ The simulator is not useful for this probe. It cannot talk to the real watch ove
 - loads the latest saved JSON into the dashboard on app launch/foreground
 - shows latest health values for sleep, HRV, blood oxygen, blood pressure, glucose, heart rate, activity, temperature, ECG, and battery
 - opens each dashboard card into a clean detail page with latest data plus saved history
+- shows AI suggested actions as separate dashboard cards under the related metric
+- opens suggested action cards into a detail view explaining why the action was recommended
+- caches AI analyses for unchanged sync data and sends changed data through the newest coach prompt
+- includes an asset catalog logo slot at `WatchProbe/Assets.xcassets/Logo.imageset`
 - exports the latest sync snapshot through the iOS share sheet
 
 The verified watch is `ES02 / 1B:89:F9:42:CF:54`.
@@ -59,10 +63,22 @@ Do not clear the watch as part of normal sync. `veepooSDKClearDeviceData` shuts 
 The first page shows the latest values loaded from the newest local JSON immediately on launch, then refreshes after a completed sync. Tapping a metric card opens a detail page:
 
 - `Latest Data` shows the most recent parsed value.
-- `History` shows saved records grouped by day or timestamp.
+- AI explanation cards show the score context, a longer explanation, and previous data when available.
+- Reference ranges are shown where the app has a useful non-diagnostic range, including ages 12-18 resting heart-rate context.
+- `History` shows saved records grouped by day or timestamp in an organized expandable section.
 - Sleep history shows score, sleep/wake time, duration, deep/light/awake time, and wake events.
 - BP, SpO2, glucose, temperature, and heart rate show timestamped saved samples.
 - Activity, HRV, and ECG show per-day summaries where the saved payload is count-based.
+
+Suggested actions are no longer embedded inside the metric card. Each action appears as its own smaller card below the related dashboard metric. Tapping that card opens an action page with the recommendation, why it fits the synced data, latest values, prior history, and any available range context.
+
+The separate Insights tab was removed. The dashboard is the main place for summaries, metric detail, and suggested actions; Profile remains available for settings.
+
+## AI Coach Cache
+
+After each saved sync, the app builds a compact coach context from metric summaries and timestamp-linked sleep/heart-rate correlation data. It hashes the non-volatile context with SHA-256 and stores that hash with the AI analysis in SQLite.
+
+If a later sync produces the same health-data hash, the app reuses the previous AI-backed analysis for the new sync and shows `AI reused`. If the hash changes, the app calls Firebase AI Logic or the configured local proxy with the current prompt. Local fallback explanations are saved for display, but only AI-backed analyses are reused across matching syncs.
 
 Sleep score is an Apple-style local estimate on a 100-point scale:
 

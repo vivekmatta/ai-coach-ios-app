@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SQLite3
 
 final class HealthDataStore {
@@ -136,25 +137,64 @@ final class HealthDataStore {
         return analysis
     }
 
-    func saveCoachAnalysis(_ analysis: AICoachAnalysis) {
+    func cachedCoachAnalysis(contextHash: String) -> AICoachAnalysis? {
+        var analysis: AICoachAnalysis?
+        withDatabase { db in
+            var statement: OpaquePointer?
+            let sql = """
+            SELECT analysis_json
+            FROM ai_analyses
+            WHERE context_hash = ?
+              AND source IN ('ai', 'firebase_ai_logic', 'ai_cached')
+            ORDER BY generated_at DESC
+            LIMIT 1
+            """
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return }
+            sqlite3_bind_text(statement, 1, contextHash, -1, SQLITE_TRANSIENT)
+            if sqlite3_step(statement) == SQLITE_ROW,
+               let raw = sqlite3_column_text(statement, 0) {
+                let data = Data(String(cString: raw).utf8)
+                analysis = try? decoder.decode(AICoachAnalysis.self, from: data)
+            }
+            sqlite3_finalize(statement)
+        }
+        return analysis
+    }
+
+    func saveCoachAnalysis(_ analysis: AICoachAnalysis, contextHash: String? = nil) {
         guard let data = try? encoder.encode(analysis),
               let json = String(data: data, encoding: .utf8) else { return }
         withDatabase { db in
             execute(
                 db,
                 """
-                INSERT OR REPLACE INTO ai_analyses(sync_id, generated_at, source, analysis_json)
-                VALUES (?, ?, ?, ?)
+                INSERT OR REPLACE INTO ai_analyses(sync_id, generated_at, source, analysis_json, context_hash)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                [analysis.syncId, analysis.generatedAt, analysis.source, json]
+                [analysis.syncId, analysis.generatedAt, analysis.source, json, contextHash ?? ""]
             )
         }
     }
 
     func coachPromptContext(syncId: String) -> String {
-        let metrics = metricSummaries(syncId: syncId)
+        var payload = coachContextPayload(syncId: syncId, includeVolatileFields: true)
+        payload["syncId"] = syncId
+        let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data()
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    func coachPromptContextHash(syncId: String) -> String {
+        let payload = coachContextPayload(syncId: syncId, includeVolatileFields: false)
+        let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data()
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func coachContextPayload(syncId: String, includeVolatileFields: Bool) -> [String: Any] {
+        let metrics = metricSummaries(syncId: syncId).filter {
+            includeVolatileFields || $0.metricId != "updated"
+        }
         var payload: [String: Any] = [
-            "syncId": syncId,
             "metrics": metrics.map {
                 [
                     "metricId": $0.metricId,
@@ -169,8 +209,7 @@ final class HealthDataStore {
         if let snapshot = snapshotPayload(syncId: syncId) {
             payload["timeCorrelations"] = timeCorrelationContext(from: snapshot)
         }
-        let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data()
-        return String(data: data, encoding: .utf8) ?? "{}"
+        return payload
     }
 
     func localFallbackAnalysis(syncId: String) -> AICoachAnalysis {
@@ -179,6 +218,10 @@ final class HealthDataStore {
             generatedAt: isoFormatter.string(from: Date()),
             metrics: metricSummaries(syncId: syncId)
         )
+    }
+
+    func currentTimestamp() -> String {
+        isoFormatter.string(from: Date())
     }
 
     private func migrateIfNeeded() {
@@ -220,12 +263,15 @@ final class HealthDataStore {
                     sync_id TEXT PRIMARY KEY,
                     generated_at TEXT NOT NULL,
                     source TEXT NOT NULL,
-                    analysis_json TEXT NOT NULL
+                    analysis_json TEXT NOT NULL,
+                    context_hash TEXT
                 )
                 """,
                 []
             )
+            execute(db, "ALTER TABLE ai_analyses ADD COLUMN context_hash TEXT", [])
             execute(db, "CREATE INDEX IF NOT EXISTS idx_metric_summaries_sync ON metric_summaries(sync_id)", [])
+            execute(db, "CREATE INDEX IF NOT EXISTS idx_ai_analyses_context_hash ON ai_analyses(context_hash)", [])
         }
     }
 

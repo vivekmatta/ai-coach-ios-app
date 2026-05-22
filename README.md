@@ -64,23 +64,35 @@ The app tries Firebase AI Logic first. If `GoogleService-Info.plist` is missing,
 
 ## AI Coach Behavior
 
-After each saved watch sync, the app stores compact metric summaries in SQLite and asks the AI coach for Dashboard explanations and Insights cards. The prompt includes adult vital reference ranges for context, but tells the model not to diagnose or invent unsupported conclusions.
+After each saved watch sync, the app stores compact metric summaries in SQLite and asks the AI coach for structured Dashboard explanations, category scores, correlations, warnings, and suggested actions. The prompt is non-diagnostic, requires timestamp-backed correlations, and tells the model to explain missing, stale, partial, or uncertain data instead of inventing conclusions.
 
 The coach context now includes timestamp-linked sleep windows and heart-rate samples. This lets the AI distinguish heart-rate readings that happened during recorded sleep from readings outside sleep, and it should say the relationship is unclear when timestamps do not overlap.
+
+AI analyses are cached by a SHA-256 fingerprint of the coach context. If a new sync contains the same health data as a previous AI-backed sync, the app reuses the saved analysis and marks it as reused. If the watch data changes, the app sends the newest context through the current AI prompt. Local fallback explanations are saved, but they do not block a later real AI response.
 
 ## Dashboard Behavior
 
 The first page now shows the latest saved values for sleep, HRV, blood oxygen, blood pressure, glucose, heart rate, activity, temperature, ECG, and battery. Each card is tappable and opens a detail page with:
 
 - latest parsed data
-- history grouped from saved local JSON files
+- a longer AI explanation backed by previous saved data when available
+- a relevant reference range, such as the adolescent resting heart-rate range used for ages 12-18
+- organized history grouped from saved local JSON files
 - sleep score, sleep duration, sleep/wake time, deep/light/awake minutes, and wake events for sleep records
+
+Suggested actions are displayed as separate cards below the related dashboard metric. Tapping an action card opens an action detail view with the recommendation, why the AI suggested it, latest data, history context, and any reference range available.
+
+The old Insights tab has been removed. The app keeps the main Dashboard and Profile flow, with deeper explanations available by tapping cards.
 
 Sleep score is a local Apple-style estimate:
 
 - 50 points for duration against an 8-hour target
 - 30 points for bedtime consistency from saved sleep start times
 - 20 points for interruptions from awake duration and wake events
+
+## App Assets
+
+`watch-probe-ios/WatchProbe/Assets.xcassets` contains a `Logo.imageset` slot for project branding. Use `AppIcon.appiconset` for the actual iOS home-screen icon and `Logo.imageset` for in-app logo artwork.
 
 Do not use an iPhone simulator for this step. Simulators cannot connect to the real watch over Bluetooth, and this probe links the manufacturer iPhoneOS SDK. If Xcode only shows simulator options or no usable device, plug in an iPhone, unlock it, trust the Mac, and select the phone from the run destination menu.
 
