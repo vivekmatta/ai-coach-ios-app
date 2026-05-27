@@ -21,6 +21,7 @@ Latest verified result:
 - local sync files: saved under `Library/Application Support/WatchResearchData`
 - current sync mode: SDK base daily sync first, direct reads as fallback
 - dashboard: loads latest saved JSON on app launch/foreground, shows tappable metric detail/history pages, and shows separate suggested-action cards below related metrics
+- Bluetooth reliability: the app disables SDK `automaticConnection`, stops stale scans/sessions before reconnecting, logs readable connection states, and retries once if password verification stalls
 
 ## Why Native iOS First
 
@@ -76,6 +77,17 @@ The iPhone simulator is not a valid target for this first test. It cannot connec
 - Added AI analysis reuse for unchanged health data using a SHA-256 coach-context hash. Changed sync data still runs through the newest AI prompt.
 - Added `WatchProbe/Assets.xcassets/Logo.imageset` for in-app logo artwork.
 
+## What Changed On May 26, 2026
+
+- Converted the Stitch HTML direction into native SwiftUI screens with a clean neomorphic visual style across onboarding, dashboard, metric detail, suggested action, and profile.
+- Fixed the iOS home-screen icon by adding `AppIcon.appiconset` and configuring the Xcode target to use it.
+- Fixed repeated BLE pairing and stalled password verification by disabling the Veepoo SDK's internal `automaticConnection`, owning scan/connect state in the app, stopping stale sessions before scan, and adding verification timeout/retry handling.
+- Confirmed the watch can now auto-connect, reach `BleVerifyPasswordSuccess`, read battery, and save research sync JSON.
+- Fixed the duplicate SQLite migration warning for `ai_analyses.context_hash` by checking whether the column exists before adding it.
+- Added local AI proxy URL normalization so a host like `10.105.80.5` becomes `http://10.105.80.5:8790`.
+- Documented iOS Local Network permission as required for the physical iPhone to reach the Mac proxy.
+- Wired the dashboard suggested-action card to the full Suggested Action screen, with an Activity fallback when the AI proxy is unavailable.
+
 ## Vendor Demo Cross-Check
 
 The company SDK documentation confirms the recommended daily-data path is SDK persistence:
@@ -118,6 +130,22 @@ If no sleep data appears, next checks are:
 - confirm auto-sync ran after password verification
 - inspect debug log lines for base daily sync progress
 - retest with only one watch data path enabled if the SDK appears busy
+
+## Local AI Proxy Checks
+
+Run the proxy from the repo root:
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=secrets/google-service-account.json node server/coach-ai-proxy.mjs
+```
+
+Expected startup log:
+
+```text
+Coach AI proxy listening on http://0.0.0.0:8790
+```
+
+In the app, use the Mac LAN URL, for example `http://10.105.80.5:8790`. If the log shows `Local network prohibited` or `NSURLErrorDomain Code=-1009`, enable iOS local network access for WatchProbe in `Settings -> Privacy & Security -> Local Network`. If WatchProbe is not listed, delete the app from the phone and reinstall from Xcode so iOS shows the permission prompt again.
 
 ## Sync Timing
 

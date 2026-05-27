@@ -60,6 +60,8 @@ On a physical iPhone, enter the Mac's LAN URL in the app under `Profile -> App S
 
 `http://192.168.1.25:8790`
 
+If only a host is entered, such as `10.105.80.5`, the app normalizes it to `http://10.105.80.5:8790` before calling `/analyze`. iOS must also allow local network access for the app: `Settings -> Privacy & Security -> Local Network -> WatchProbe`. If the app is not listed, reinstall from Xcode and allow the local-network prompt.
+
 The app tries Firebase AI Logic first. If `GoogleService-Info.plist` is missing, it falls back to the local proxy. Do not use the local proxy as a production research backend.
 
 ## AI Coach Behavior
@@ -82,6 +84,8 @@ The first page now shows the latest saved values for sleep, HRV, blood oxygen, b
 
 Suggested actions are displayed as separate cards below the related dashboard metric. Tapping an action card opens an action detail view with the recommendation, why the AI suggested it, latest data, history context, and any reference range available.
 
+The top Dashboard coach summary also routes its suggested-action area to the full action detail view when an action is available, using the activity fallback if the AI proxy has not returned a recommendation yet.
+
 The old Insights tab has been removed. The app keeps the main Dashboard and Profile flow, with deeper explanations available by tapping cards.
 
 Sleep score is a local Apple-style estimate:
@@ -93,6 +97,8 @@ Sleep score is a local Apple-style estimate:
 ## App Assets
 
 `watch-probe-ios/WatchProbe/Assets.xcassets` contains a `Logo.imageset` slot for project branding. Use `AppIcon.appiconset` for the actual iOS home-screen icon and `Logo.imageset` for in-app logo artwork.
+
+`AppIcon.appiconset` is configured as the iOS app icon in the Xcode project. If the home-screen icon does not update on a device, delete the installed app and reinstall the current build from Xcode so iOS refreshes the icon cache.
 
 Do not use an iPhone simulator for this step. Simulators cannot connect to the real watch over Bluetooth, and this probe links the manufacturer iPhoneOS SDK. If Xcode only shows simulator options or no usable device, plug in an iPhone, unlock it, trust the Mac, and select the phone from the run destination menu.
 

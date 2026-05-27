@@ -20,6 +20,7 @@ The previous Expo app, research dashboard, Node server, mock fixtures, and bundl
 - The dashboard loads the newest local JSON on app launch/foreground, then refreshes after sync.
 - Each metric card opens a detail page with latest data, a longer AI explanation, reference range context where available, and saved history grouped from local JSON.
 - Suggested actions are separate dashboard cards below the related metric. Tapping one opens an action detail page explaining why the action was recommended.
+- The top dashboard suggested-action area also opens the action detail page when a recommendation is available; Activity has a local fallback action when AI is unavailable.
 - The old Insights tab has been removed; keep the Dashboard/Profile structure unless the product direction changes.
 - AI coach responses are cached by a SHA-256 hash of the non-volatile coach context. Reuse only AI-backed analyses for matching data; send changed data through the current prompt.
 - Sleep includes a local Apple-style score, duration, sleep/wake time, deep/light/awake minutes, and wake events.
@@ -29,6 +30,9 @@ The previous Expo app, research dashboard, Node server, mock fixtures, and bundl
 - Recent ES02 syncs expose `3/3` saved days. The app does not prune local JSON; history merges the newest saved copy of each exported day.
 - The app-side auto-sync timer is 10 minutes while open/connected. The app does not yet configure every watch-side automatic measurement switch.
 - The app has `WatchProbe/Assets.xcassets/Logo.imageset` for in-app logo artwork. Use `AppIcon.appiconset` for the actual iOS app icon.
+- The Xcode target is configured to use `WatchProbe/Assets.xcassets/AppIcon.appiconset` as the home-screen app icon.
+- The Veepoo SDK's internal `automaticConnection` is disabled. The app owns scanning, preferred-watch auto-connect, stale-session cleanup, and one verification retry to avoid duplicate pairing/stalled SDK state.
+- Local AI proxy URLs are normalized to port `8790`; iOS Local Network permission is required for device-to-Mac proxy calls.
 - Do not use `veepooSDKClearDeviceData` in the normal cycle. It shuts the bracelet down and has no success callback.
 
 ## Verification

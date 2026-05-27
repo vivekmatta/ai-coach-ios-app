@@ -22,6 +22,7 @@ final class ProbeViewController: UIViewController {
     private let viewModel = WatchProbeViewModel()
     private var dashboardController: UIHostingController<WatchProbeDashboardView>?
     private var devices: [VPPeripheralModel] = []
+    private var isScanning = false
     private var isConnecting = false
     private var isVerified = false
     private var isReadingBattery = false
@@ -31,6 +32,8 @@ final class ProbeViewController: UIViewController {
     private var isCollectionSyncing = false
     private var stepTimer: Timer?
     private var collectionTimer: Timer?
+    private var connectionTimeoutWorkItem: DispatchWorkItem?
+    private var connectionVerificationRetryCount = 0
     private var nextCollectionDate: Date?
     private var activeFunction: ActiveFunction?
     private var shouldAutoConnectToPreferredDevice = false
@@ -45,6 +48,8 @@ final class ProbeViewController: UIViewController {
     private let syncBaseDailyTimeout: TimeInterval = 120
     private let syncLongReadTimeout: TimeInterval = 30
     private let syncTotalTimeout: TimeInterval = 180
+    private let connectionVerificationTimeout: TimeInterval = 25
+    private let maxConnectionVerificationRetries = 1
     private let syncMaxPackageCount = 96
     private let syncRRProbeMaxBlocks = 20
 
@@ -132,6 +137,7 @@ final class ProbeViewController: UIViewController {
         stopActiveFunction(log: false)
         stopStepPolling(log: false)
         stopCollectionTimer()
+        cancelConnectionTimeout()
         manager?.veepooSDKStopScanDevice()
     }
 
@@ -728,15 +734,27 @@ final class ProbeViewController: UIViewController {
     }
 
     private func beginScan(autoConnectPreferred: Bool, reason: String) {
+        guard !isVerified else { return }
         guard !isConnecting else {
             appendStatus("Already connecting. Disconnect before scanning again.")
             return
         }
+        if isScanning {
+            shouldAutoConnectToPreferredDevice = shouldAutoConnectToPreferredDevice || autoConnectPreferred
+            appendStatus(autoConnectPreferred ? "Already scanning for saved watch..." : "Already scanning...")
+            return
+        }
 
         isManuallyDisconnected = false
+        if reason != "verification_retry" {
+            connectionVerificationRetryCount = 0
+        }
+        isScanning = true
         shouldAutoConnectToPreferredDevice = autoConnectPreferred
         stopStepPolling(log: false)
         stopCollectionTimer()
+        cancelConnectionTimeout()
+        manager?.veepooSDKStopScanDevice()
         devices.removeAll()
         viewModel.discoveredWatches = []
         isVerified = false
@@ -756,13 +774,33 @@ final class ProbeViewController: UIViewController {
         tabControl.isHidden = true
         appendStatus(autoConnectPreferred ? "Scanning for saved watch..." : "Scanning...")
 
+        manager?.automaticConnection = false
+        manager?.veepooSDKDisconnectDevice()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
+            self?.startSDKScanIfNeeded()
+        }
+    }
+
+    private func startSDKScanIfNeeded() {
+        guard isScanning, !isConnecting, !isVerified else { return }
         manager?.manufacturerIDFilter = false
-        manager?.deviceShowConfirm = true
+        manager?.automaticConnection = false
+        manager?.deviceShowConfirm = !hasPreferredDevice()
         manager?.peripheralManage = VPPeripheralManage.shareVPPeripheralManager()
         manager?.veepooSDKStartScanDeviceAndReceiveScanningDevice { [weak self] model in
             guard let self, let model else { return }
-            self.addOrUpdate(model)
+            DispatchQueue.main.async {
+                guard self.isScanning, !self.isConnecting, !self.isVerified else { return }
+                self.addOrUpdate(model)
+            }
         }
+    }
+
+    private func hasPreferredDevice() -> Bool {
+        let defaults = UserDefaults.standard
+        let savedAddress = defaults.string(forKey: preferredDeviceAddressKey) ?? ""
+        let savedName = defaults.string(forKey: preferredDeviceNameKey) ?? ""
+        return !savedAddress.isEmpty || !savedName.isEmpty
     }
 
     @objc private func disconnect() {
@@ -774,6 +812,8 @@ final class ProbeViewController: UIViewController {
         manager?.veepooSDKStopScanDevice()
         manager?.veepooSDKDisconnectDevice()
         viewModel.discoveredWatches = []
+        cancelConnectionTimeout()
+        isScanning = false
         isConnecting = false
         isVerified = false
         isReadingBattery = false
@@ -832,17 +872,55 @@ final class ProbeViewController: UIViewController {
             return
         }
 
+        isScanning = false
         isConnecting = true
         tableView.allowsSelection = false
         scanButton.isEnabled = false
+        manager?.automaticConnection = false
         manager?.veepooSDKStopScanDevice()
         appendStatus("Connecting to \(displayName(for: model))...")
+        scheduleConnectionTimeout()
 
         manager?.veepooSDKConnectDevice(model) { [weak self] state in
             DispatchQueue.main.async {
                 self?.handleConnectState(state)
             }
         }
+    }
+
+    private func scheduleConnectionTimeout() {
+        cancelConnectionTimeout()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.isConnecting, !self.isVerified else { return }
+            self.manager?.veepooSDKStopScanDevice()
+            self.manager?.veepooSDKDisconnectDevice()
+            self.isScanning = false
+            self.isConnecting = false
+            self.shouldAutoConnectToPreferredDevice = false
+            self.viewModel.isConnected = false
+            self.viewModel.canDisconnect = false
+            self.viewModel.connectionState = "Connection timed out"
+            self.tableView.allowsSelection = true
+            self.scanButton.isEnabled = true
+            if self.connectionVerificationRetryCount < self.maxConnectionVerificationRetries,
+               self.isAutoCollectionEnabled,
+               !self.isManuallyDisconnected {
+                self.connectionVerificationRetryCount += 1
+                self.appendStatus("Password verification timed out. Retrying connection...")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    self?.startPreferredWatchScan(reason: "verification_retry")
+                }
+            } else {
+                self.appendStatus("Password verification timed out. Tap Connect to retry.")
+            }
+        }
+        connectionTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + connectionVerificationTimeout, execute: timeout)
+    }
+
+    private func cancelConnectionTimeout() {
+        connectionTimeoutWorkItem?.cancel()
+        connectionTimeoutWorkItem = nil
     }
 
     private func persistPreferredDevice(_ model: VPPeripheralModel) {
@@ -881,8 +959,12 @@ final class ProbeViewController: UIViewController {
     }
 
     private func handleConnectState(_ state: DeviceConnectState) {
+        appendStatus("BLE connection state: \(connectionStateDescription(state))")
         switch state {
         case .BlePoweredOff:
+            cancelConnectionTimeout()
+            isScanning = false
+            isConnecting = false
             viewModel.isConnected = false
             viewModel.canDisconnect = false
             appendStatus("Bluetooth is powered off.")
@@ -893,6 +975,8 @@ final class ProbeViewController: UIViewController {
             viewModel.connectionState = "Connected. Verifying..."
             appendStatus("Connected. Waiting for SDK password verification...")
         case .BleConnectFailed:
+            cancelConnectionTimeout()
+            isScanning = false
             isConnecting = false
             viewModel.isConnected = false
             viewModel.canDisconnect = false
@@ -900,8 +984,11 @@ final class ProbeViewController: UIViewController {
             scanButton.isEnabled = true
             appendStatus("Connection failed.")
         case .BleVerifyPasswordSuccess:
+            cancelConnectionTimeout()
+            isScanning = false
             isConnecting = false
             isVerified = true
+            connectionVerificationRetryCount = 0
             shouldAutoConnectToPreferredDevice = false
             viewModel.isConnected = true
             viewModel.canDisconnect = true
@@ -922,6 +1009,8 @@ final class ProbeViewController: UIViewController {
             readBattery()
             startCollectionTimer(runImmediately: true, reason: "connect")
         case .BleVerifyPasswordFailure:
+            cancelConnectionTimeout()
+            isScanning = false
             isConnecting = false
             viewModel.isConnected = false
             viewModel.canDisconnect = false
@@ -929,6 +1018,8 @@ final class ProbeViewController: UIViewController {
             scanButton.isEnabled = true
             appendStatus("Password verification failed.")
         case .BleConnectTimeout:
+            cancelConnectionTimeout()
+            isScanning = false
             isConnecting = false
             viewModel.isConnected = false
             viewModel.canDisconnect = false
@@ -936,6 +1027,8 @@ final class ProbeViewController: UIViewController {
             scanButton.isEnabled = true
             appendStatus("Connection timed out.")
         case .BleConfirmTimeout:
+            cancelConnectionTimeout()
+            isScanning = false
             isConnecting = false
             viewModel.isConnected = false
             viewModel.canDisconnect = false
@@ -944,6 +1037,29 @@ final class ProbeViewController: UIViewController {
             appendStatus("Device confirmation timed out. Disconnect before retrying.")
         @unknown default:
             appendStatus("Unknown connection state: \(state.rawValue)")
+        }
+    }
+
+    private func connectionStateDescription(_ state: DeviceConnectState) -> String {
+        switch state {
+        case .BlePoweredOff:
+            return "powered off"
+        case .BleConnecting:
+            return "connecting"
+        case .BleConnectSuccess:
+            return "connected, verifying password"
+        case .BleConnectFailed:
+            return "connect failed"
+        case .BleVerifyPasswordSuccess:
+            return "password verified"
+        case .BleVerifyPasswordFailure:
+            return "password failed"
+        case .BleConnectTimeout:
+            return "connect timeout"
+        case .BleConfirmTimeout:
+            return "confirm timeout"
+        @unknown default:
+            return "unknown \(state.rawValue)"
         }
     }
 

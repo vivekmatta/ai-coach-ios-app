@@ -15,6 +15,7 @@ The simulator is not useful for this probe. It cannot talk to the real watch ove
 - reads battery/charge state after `BleVerifyPasswordSuccess`
 - remembers the preferred watch after a successful verification
 - auto-connects on app open
+- disables the Veepoo SDK's internal `automaticConnection` so the app owns one clean scan/connect flow
 - reads steps/live measurements
 - runs manual tests for supported functions
 - saves local JSON sync snapshots
@@ -23,8 +24,10 @@ The simulator is not useful for this probe. It cannot talk to the real watch ove
 - opens each dashboard card into a clean detail page with latest data plus saved history
 - shows AI suggested actions as separate dashboard cards under the related metric
 - opens suggested action cards into a detail view explaining why the action was recommended
+- opens the top dashboard suggested-action area into the full action view when a recommendation is available
 - caches AI analyses for unchanged sync data and sends changed data through the newest coach prompt
 - includes an asset catalog logo slot at `WatchProbe/Assets.xcassets/Logo.imageset`
+- includes `WatchProbe/Assets.xcassets/AppIcon.appiconset` for the iOS home-screen icon
 - exports the latest sync snapshot through the iOS share sheet
 
 The verified watch is `ES02 / 1B:89:F9:42:CF:54`.
@@ -72,7 +75,25 @@ The first page shows the latest values loaded from the newest local JSON immedia
 
 Suggested actions are no longer embedded inside the metric card. Each action appears as its own smaller card below the related dashboard metric. Tapping that card opens an action page with the recommendation, why it fits the synced data, latest values, prior history, and any available range context.
 
+The main coach summary card also links to the action page. If live watch data exists but the AI proxy is unavailable, the app can still show a local Activity recommendation so the action screen is reachable during testing.
+
 The separate Insights tab was removed. The dashboard is the main place for summaries, metric detail, and suggested actions; Profile remains available for settings.
+
+## Local AI Proxy
+
+Run the development proxy from the repo root:
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=secrets/google-service-account.json node server/coach-ai-proxy.mjs
+```
+
+The proxy listens on port `8790`. In the app's Profile settings, enter the Mac LAN address with the port, for example:
+
+`http://10.105.80.5:8790`
+
+Entering only `10.105.80.5` is also accepted; the app normalizes it to `http://10.105.80.5:8790` before calling `/analyze`.
+
+On iPhone, allow local network access for WatchProbe in `Settings -> Privacy & Security -> Local Network`. If iOS previously denied it and the app is missing from that list, delete the app, reinstall from Xcode, and tap Allow when prompted.
 
 ## AI Coach Cache
 

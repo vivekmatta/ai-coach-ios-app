@@ -12,6 +12,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         let bleManager = VPBleCentralManage.sharedBleManager()
         bleManager?.isLogEnable = true
+        bleManager?.automaticConnection = false
         bleManager?.peripheralManage = VPPeripheralManage.shareVPPeripheralManager()
 
 #if canImport(FirebaseCore)

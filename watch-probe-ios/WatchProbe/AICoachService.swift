@@ -99,14 +99,15 @@ final class AICoachService {
 
     private func analyzeWithProxy(syncId: String, contextJSON: String) async throws -> AICoachAnalysis {
         let rawURL = UserDefaults.standard.string(forKey: "WatchProbe.localAIProxyURL") ?? ""
-        let trimmedURL = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedURL.isEmpty,
-              var components = URLComponents(string: trimmedURL) else {
+        guard var components = normalizedProxyComponents(from: rawURL) else {
             throw AICoachServiceError.proxyUnavailable
         }
         components.path = "/analyze"
         guard let url = components.url else {
             throw AICoachServiceError.proxyUnavailable
+        }
+        if let normalizedBaseURL = normalizedProxyBaseURL(from: components) {
+            UserDefaults.standard.set(normalizedBaseURL, forKey: "WatchProbe.localAIProxyURL")
         }
 
         let payload = [
@@ -129,6 +130,33 @@ final class AICoachService {
             throw AICoachServiceError.invalidJSON
         }
         return normalizedAnalysis(decoded, syncId: syncId)
+    }
+
+    private func normalizedProxyComponents(from rawURL: String) -> URLComponents? {
+        var trimmedURL = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURL.isEmpty else { return nil }
+        if !trimmedURL.contains("://") {
+            trimmedURL = "http://\(trimmedURL)"
+        }
+        guard var components = URLComponents(string: trimmedURL),
+              components.host?.isEmpty == false else {
+            return nil
+        }
+        if components.scheme?.isEmpty ?? true {
+            components.scheme = "http"
+        }
+        if components.port == nil {
+            components.port = 8790
+        }
+        return components
+    }
+
+    private func normalizedProxyBaseURL(from components: URLComponents) -> String? {
+        var base = components
+        base.path = ""
+        base.query = nil
+        base.fragment = nil
+        return base.url?.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
     static func prompt(contextJSON: String) -> String {

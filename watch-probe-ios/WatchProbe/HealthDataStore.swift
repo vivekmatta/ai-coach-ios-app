@@ -269,7 +269,9 @@ final class HealthDataStore {
                 """,
                 []
             )
-            execute(db, "ALTER TABLE ai_analyses ADD COLUMN context_hash TEXT", [])
+            if !columnExists("context_hash", in: "ai_analyses", db: db) {
+                execute(db, "ALTER TABLE ai_analyses ADD COLUMN context_hash TEXT", [])
+            }
             execute(db, "CREATE INDEX IF NOT EXISTS idx_metric_summaries_sync ON metric_summaries(sync_id)", [])
             execute(db, "CREATE INDEX IF NOT EXISTS idx_ai_analyses_context_hash ON ai_analyses(context_hash)", [])
         }
@@ -293,6 +295,21 @@ final class HealthDataStore {
         }
         sqlite3_step(statement)
         sqlite3_finalize(statement)
+    }
+
+    private func columnExists(_ column: String, in table: String, db: OpaquePointer) -> Bool {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &statement, nil) == SQLITE_OK else {
+            return false
+        }
+        defer { sqlite3_finalize(statement) }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if columnString(statement, 1) == column {
+                return true
+            }
+        }
+        return false
     }
 
     private func snapshotPayload(syncId: String) -> [String: Any]? {
