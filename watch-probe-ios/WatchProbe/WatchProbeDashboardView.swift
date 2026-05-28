@@ -138,6 +138,11 @@ final class WatchProbeViewModel: ObservableObject {
         UserDefaults.standard.set(true, forKey: "WatchProbe.onboardingCompleted")
         completeOnboardingAction?()
     }
+
+    func showOnboarding() {
+        onboardingCompleted = false
+        UserDefaults.standard.set(false, forKey: "WatchProbe.onboardingCompleted")
+    }
 }
 
 struct WatchProbeDashboardView: View {
@@ -1835,6 +1840,22 @@ private struct SettingsSection: View {
                         )
                     )
                     .labelsHidden()
+                }
+                .card()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        CircleIcon(systemName: "sparkles", color: .wpPrimary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Show onboarding")
+                                .wpHeadline()
+                            Text("Replay the first-run setup without deleting app data.")
+                                .wpCaption()
+                        }
+                    }
+                    ActionButton(title: "Show Onboarding", color: .wpPrimary, filled: false, disabled: false) {
+                        model.showOnboarding()
+                    }
                 }
                 .card()
 

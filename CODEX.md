@@ -22,6 +22,7 @@ The previous Expo app, research dashboard, Node server, mock fixtures, and bundl
 - Suggested actions are separate dashboard cards below the related metric. Tapping one opens an action detail page explaining why the action was recommended.
 - Suggested actions support structured durations, intensity, reminders, and workout categories. Calendar-suitable actions can show suggested times, add accepted times to the selected calendar, and delete app-created calendar events.
 - Calendar-aware coaching supports iOS Calendar and Google Calendar from Profile settings. Selected calendars, privacy mode, and write calendar are stored in `UserDefaults`; Google Sign-In is restored on app launch.
+- `Profile -> App Settings -> Show onboarding` replays the first-run onboarding by resetting only `WatchProbe.onboardingCompleted`; it preserves synced data and other settings for demos.
 - In calendar busy-only mode, event titles are omitted. In title-aware mode, selected event titles can be used in time-slot explanations and AI availability context.
 - The top dashboard suggested-action area also opens the action detail page when a recommendation is available; Activity has a local fallback action when AI is unavailable.
 - The old Insights tab has been removed; keep the Dashboard/Profile structure unless the product direction changes.

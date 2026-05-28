@@ -72,6 +72,8 @@ The coach context now includes timestamp-linked sleep windows and heart-rate sam
 
 Calendar-aware coaching is available from `Profile -> App Settings -> Calendar-aware coaching`. The app can connect to iOS calendars or Google Calendar, lets the user choose which calendars the coach should consider, and stores the selected calendars locally. Google Calendar uses the iOS OAuth client configured in `Info.plist` (`GIDClientID` plus the reversed client-ID URL scheme), restores the previous sign-in on launch, and refreshes calendar availability before AI inference when calendars change.
 
+To replay the first-run flow for demos, use `Profile -> App Settings -> Show onboarding`. This marks only the onboarding flag as incomplete, so saved watch data, calendar choices, proxy settings, and other app data remain in place.
+
 Calendar data is sent to the AI as availability context rather than as a raw full calendar dump. In busy-only mode, event titles are omitted. In title-aware mode, selected event titles are included so suggested times can explain context such as available time before a meeting. Suggested action detail pages show specific calendar time options, why each option was chosen, and can add or delete app-created calendar events.
 
 Suggested actions now support structured action types, durations, intensity, reminders, and workout categories such as HIIT/mobility/strength when appropriate. Accepted actions can schedule local push notifications for reminders such as hydration or movement prompts.

@@ -29,6 +29,7 @@ The simulator is not useful for this probe. It cannot talk to the real watch ove
 - shows specific calendar time options with explanations based on nearby busy events
 - adds accepted suggested actions to the selected calendar and can delete app-created calendar events
 - schedules local notifications for reminder-style suggested actions
+- replays onboarding from `Profile -> App Settings -> Show onboarding` without deleting saved app data
 - opens the top dashboard suggested-action area into the full action view when a recommendation is available
 - caches AI analyses for unchanged sync data and sends changed data through the newest coach prompt
 - includes an asset catalog logo slot at `WatchProbe/Assets.xcassets/Logo.imageset`
@@ -87,6 +88,8 @@ When a user taps a suggested time, the app creates the event in the selected wri
 The main coach summary card also links to the action page. If live watch data exists but the AI proxy is unavailable, the app can still show a local Activity recommendation so the action screen is reachable during testing.
 
 The separate Insights tab was removed. The dashboard is the main place for summaries, metric detail, and suggested actions; Profile remains available for settings.
+
+For demos, open `Profile -> App Settings -> Show onboarding` to present the first-run onboarding again. This only resets `WatchProbe.onboardingCompleted`; saved sync snapshots, preferred watch state, calendar settings, and local proxy settings are preserved.
 
 ## Calendar-Aware Coaching
 
