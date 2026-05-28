@@ -208,6 +208,9 @@ final class ProbeViewController: UIViewController {
         viewModel.calendarContextChangedAction = { [weak self] in
             self?.rerunCoachAnalysisForLatestSync(reason: "calendar_context_changed")
         }
+        viewModel.coachPersonalityChangedAction = { [weak self] in
+            self?.rerunCoachAnalysisForLatestSync(reason: "coach_personality_changed")
+        }
         CoachCalendarService.shared.calendarContextChanged = { [weak self] in
             self?.rerunCoachAnalysisForLatestSync(reason: "calendar_context_changed")
         }
@@ -2141,17 +2144,9 @@ final class ProbeViewController: UIViewController {
     private func runCoachAnalysisIfNeeded(syncId: String) {
         guard !syncId.isEmpty else { return }
         viewModel.isAIAnalyzing = true
-        let calendarAware = CoachCalendarService.shared.hasUsableCalendarContext
-        if let cached = HealthDataStore.shared.cachedCoachAnalysis(syncId: syncId),
-           cached.isAIBacked,
-           !calendarAware {
-            viewModel.coachAnalysis = cached
-            viewModel.aiStatus = "AI analyzed"
-            viewModel.isAIAnalyzing = false
-            return
-        }
 
         viewModel.aiStatus = "AI analyzing"
+        let personality = viewModel.coachPersonality
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -2172,7 +2167,7 @@ final class ProbeViewController: UIViewController {
                     }
                     return
                 }
-                let analysis = try await AICoachService.shared.analyze(syncId: syncId, contextJSON: context)
+                let analysis = try await AICoachService.shared.analyze(syncId: syncId, contextJSON: context, personality: personality)
                 HealthDataStore.shared.saveCoachAnalysis(analysis, contextHash: contextHash)
                 await MainActor.run {
                     self.viewModel.coachAnalysis = analysis
@@ -2182,7 +2177,8 @@ final class ProbeViewController: UIViewController {
                     self.appendStatus("AI coach analysis saved for sync \(syncId).")
                 }
             } catch {
-                let contextHash = HealthDataStore.shared.coachPromptContextHash(syncId: syncId)
+                let context = await self.coachPromptContextWithCalendar(syncId: syncId)
+                let contextHash = self.coachContextHash(context)
                 let fallback = HealthDataStore.shared.localFallbackAnalysis(syncId: syncId)
                 HealthDataStore.shared.saveCoachAnalysis(fallback, contextHash: contextHash)
                 await MainActor.run {
@@ -2201,10 +2197,10 @@ final class ProbeViewController: UIViewController {
             guard let snapshot = try WatchResearchStore.shared.latestSyncSnapshot(),
                   let syncId = snapshot.payload["syncId"] as? String,
                   !syncId.isEmpty else {
-                appendStatus("Calendar connected. Sync watch once so AI can use calendar context.")
+                appendStatus("Sync watch once so AI can refresh with the latest settings.")
                 return
             }
-            viewModel.aiStatus = "AI updating with calendar"
+            viewModel.aiStatus = reason == "coach_personality_changed" ? "AI updating for coach style" : "AI updating with calendar"
             viewModel.isAIAnalyzing = true
             appendStatus("Refreshing AI coach analysis for \(reason).")
             runCoachAnalysisIfNeeded(syncId: syncId)
@@ -2215,17 +2211,23 @@ final class ProbeViewController: UIViewController {
 
     private func coachPromptContextWithCalendar(syncId: String) async -> String {
         let base = HealthDataStore.shared.coachPromptContext(syncId: syncId)
-        guard CoachCalendarService.shared.hasUsableCalendarContext,
-              let data = base.data(using: .utf8),
+        guard let data = base.data(using: .utf8),
               var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return base
         }
-        let availability = await withCheckedContinuation { continuation in
-            CoachCalendarService.shared.availabilityContextForAI { summary in
-                continuation.resume(returning: summary)
+        payload["coachPersonality"] = [
+            "id": viewModel.coachPersonality.rawValue,
+            "label": viewModel.coachPersonality.coachLabel,
+            "instruction": viewModel.coachPersonality.promptInstruction
+        ]
+        if CoachCalendarService.shared.hasUsableCalendarContext {
+            let availability = await withCheckedContinuation { continuation in
+                CoachCalendarService.shared.availabilityContextForAI { summary in
+                    continuation.resume(returning: summary)
+                }
             }
+            payload["calendarContext"] = availability
         }
-        payload["calendarContext"] = availability
         let enriched = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? data
         return String(data: enriched, encoding: .utf8) ?? base
     }

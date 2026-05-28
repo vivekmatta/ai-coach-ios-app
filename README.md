@@ -82,14 +82,16 @@ AI analyses are cached by a SHA-256 fingerprint of the coach context. If a new s
 
 The app now uses a four-tab coach-first SwiftUI shell inspired by the Stitch prototype:
 
-- `Coach`: greeting, Steady/Chill/Beast Mode personality selector, Apple-style daily rings, coach message, top action checklist, and compact armband status.
-- `Plan`: daily task cards grouped as Fuel, Move, Mind, and Recovery.
+- `Coach`: greeting, shared goal-puzzle progress, coach message, top action checklist, sync/AI loading states, and compact armband status.
+- `Plan`: daily task cards grouped as Fuel, Move, Mind, and Recovery. Checklist completion feeds the Coach goal puzzle.
 - `Progress`: plain-English progress summaries first, with sensor analytics hidden behind tap-through detail views.
 - `Profile`: watch controls, auto-sync, coach personality, reminders, onboarding replay, local AI proxy, export, and debug log.
 
 Raw sensor analytics are not shown on the first-level Coach or Plan screens. Sleep, HRV, SpO2, blood pressure, glucose, heart rate, activity, temperature, ECG, battery, sync metadata, AI explanations, references, and saved history remain available from Progress/detail views.
 
-The Plan checklist is action-first. Tapping a task row checks or unchecks it; tapping only the `i` info button opens the recommendation detail view. AI-backed tasks come from `suggested_actions`; local fallback tasks keep the UI useful before a proxy response is available.
+The Plan checklist is action-first. Tapping a task row checks or unchecks it; tapping only the `i` info button opens the recommendation detail view. AI-backed tasks come from `suggested_actions`; local fallback tasks keep the UI useful before a proxy response is available. Task completion is shared across Coach and Plan, persisted locally, and blended with watch/AI metrics to update Move, Train, Rest, and Mind progress.
+
+Coach personality is configured only in Profile. Changing Steady, Chill, or Beast Mode refreshes the latest AI analysis with personality-specific prompt instructions, and cache reuse includes that personality context.
 
 The old analytics-first Dashboard/Insights structure has been replaced by the Coach/Plan/Progress/Profile flow.
 

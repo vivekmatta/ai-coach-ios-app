@@ -76,6 +76,17 @@ enum CoachPersonality: String, CaseIterable, Identifiable {
         case .beastMode: return "Beast Mode Coach"
         }
     }
+
+    var promptInstruction: String {
+        switch self {
+        case .steady:
+            return "Use a steady, practical coaching voice. Be calm, clear, and balanced. Format output as short, specific guidance with no hype."
+        case .chill:
+            return "Use a relaxed, supportive coaching voice. Sound warm and low-pressure. Keep recommendations gentle, simple, and easy to start."
+        case .beastMode:
+            return "Use a direct, high-energy coaching voice without shame or medical claims. Be concise, action-oriented, and motivating while staying recovery-aware."
+        }
+    }
 }
 
 final class WatchProbeViewModel: ObservableObject {
@@ -110,6 +121,11 @@ final class WatchProbeViewModel: ObservableObject {
     @Published var coachAnalysis: AICoachAnalysis = .empty
     @Published var aiStatus = "Sync your watch to generate coach insights."
     @Published var isAIAnalyzing = false
+    @Published var completedTaskIds: Set<String> = WatchProbeViewModel.savedCompletedTaskIds() {
+        didSet {
+            UserDefaults.standard.set(Array(completedTaskIds), forKey: "WatchProbe.completedTaskIds")
+        }
+    }
     @Published var discoveredWatches: [WatchDeviceCandidate] = []
     @Published var onboardingCompleted = UserDefaults.standard.bool(forKey: "WatchProbe.onboardingCompleted")
     @Published var notificationPermissionStatus = "Not requested"
@@ -121,6 +137,9 @@ final class WatchProbeViewModel: ObservableObject {
     @Published var coachPersonality = CoachPersonality(rawValue: UserDefaults.standard.string(forKey: "WatchProbe.coachPersonality") ?? "") ?? .steady {
         didSet {
             UserDefaults.standard.set(coachPersonality.rawValue, forKey: "WatchProbe.coachPersonality")
+            if oldValue != coachPersonality {
+                coachPersonalityChangedAction?()
+            }
         }
     }
     @Published var debugLog = ""
@@ -138,6 +157,7 @@ final class WatchProbeViewModel: ObservableObject {
     var completeOnboardingAction: (() -> Void)?
     var notificationPermissionAction: (() -> Void)?
     var calendarContextChangedAction: (() -> Void)?
+    var coachPersonalityChangedAction: (() -> Void)?
     var watchSelectAction: ((WatchDeviceCandidate) -> Void)?
 
     var wellnessScore: Int {
@@ -171,6 +191,16 @@ final class WatchProbeViewModel: ObservableObject {
     func showOnboarding() {
         onboardingCompleted = false
         UserDefaults.standard.set(false, forKey: "WatchProbe.onboardingCompleted")
+    }
+
+    private static func savedCompletedTaskIds() -> Set<String> {
+        if let saved = UserDefaults.standard.stringArray(forKey: "WatchProbe.completedTaskIds") {
+            return Set(saved)
+        }
+        return [
+            "protein-rich-lunch",
+            "5-min-box-breathing"
+        ]
     }
 }
 
@@ -213,7 +243,6 @@ struct WatchProbeDashboardView: View {
 
 private struct CoachHomeView: View {
     @ObservedObject var model: WatchProbeViewModel
-    @State private var completedTaskIds: Set<String> = ["protein-rich-lunch"]
 
     var body: some View {
         NavigationView {
@@ -223,16 +252,17 @@ private struct CoachHomeView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Good morning, Alex")
                             .wpLargeTitle()
-                        PersonalitySelector(selection: $model.coachPersonality)
                     }
 
-                    GoalRingsOverview(goals: homeGoals)
+                    LoadingStateStack(model: model)
+
+                    GoalPuzzleOverview(goals: homeGoals)
 
                     CoachMessageCard(model: model)
 
                     TodayFocusCard(
                         items: Array(planItems.prefix(3)),
-                        completedTaskIds: $completedTaskIds
+                        completedTaskIds: $model.completedTaskIds
                     )
 
                     ArmbandStatusRow(model: model)
@@ -247,12 +277,12 @@ private struct CoachHomeView: View {
         .navigationViewStyle(StackNavigationViewStyle())
     }
 
-    private var homeGoals: [GoalRingSummary] {
+    private var homeGoals: [GoalPuzzleSummary] {
         [
-            GoalRingSummary(title: "Move", valueText: percentText(moveProgress), progress: moveProgress, color: .wpPrimary),
-            GoalRingSummary(title: "Train", valueText: percentText(trainProgress), progress: trainProgress, color: .wpSecondary),
-            GoalRingSummary(title: "Rest", valueText: percentText(restProgress), progress: restProgress, color: .wpTertiary),
-            GoalRingSummary(title: "Mind", valueText: percentText(mindProgress), progress: mindProgress, color: .wpPrimaryContainer)
+            GoalPuzzleSummary(title: "Move", valueText: percentText(moveProgress), progress: moveProgress, color: .wpPrimary),
+            GoalPuzzleSummary(title: "Train", valueText: percentText(trainProgress), progress: trainProgress, color: .wpSecondary),
+            GoalPuzzleSummary(title: "Rest", valueText: percentText(restProgress), progress: restProgress, color: .wpTertiary),
+            GoalPuzzleSummary(title: "Mind", valueText: percentText(mindProgress), progress: mindProgress, color: .wpPrimaryContainer)
         ]
     }
 
@@ -261,38 +291,86 @@ private struct CoachHomeView: View {
     }
 
     private var moveProgress: Double {
-        min(Double(model.steps.numericValue ?? 7500) / 10000.0, 1.0)
+        blendedProgress(metric: activityMetricProgress, task: taskProgress { $0.category == "Move" })
     }
 
     private var trainProgress: Double {
-        min(Double(model.calories.numericValue ?? 200) / 400.0, 1.0)
+        let trainingTaskProgress = taskProgress(where: isTrainingTask)
+        return blendedProgress(metric: calorieProgress, task: trainingTaskProgress)
     }
 
     private var restProgress: Double {
-        min(Double(model.sleepScore.numericValue ?? 85) / 100.0, 1.0)
+        blendedProgress(
+            metric: scoreProgress(named: ["Sleep Score", "Recovery Score"]) ?? min(Double(model.sleepScore.numericValue ?? 85) / 100.0, 1.0),
+            task: taskProgress { $0.category == "Recovery" }
+        )
     }
 
     private var mindProgress: Double {
-        let mindItems = planItems.filter { $0.category == "Mind" }
-        guard !mindItems.isEmpty else { return 0.30 }
-        let done = mindItems.filter { completedTaskIds.contains($0.id) || $0.completedByDefault }.count
-        return Double(done) / Double(mindItems.count)
+        blendedProgress(
+            metric: scoreProgress(named: ["Stress / Readiness Score", "Stress", "Readiness"]) ?? 0.30,
+            task: taskProgress { $0.category == "Mind" }
+        )
     }
 
     private func percentText(_ progress: Double) -> String {
         "\(Int((progress * 100).rounded()))%"
     }
+
+    private var activityMetricProgress: Double {
+        scoreProgress(named: ["Activity Score"]) ?? min(Double(model.steps.numericValue ?? 7500) / 10000.0, 1.0)
+    }
+
+    private var calorieProgress: Double {
+        min(Double(model.calories.numericValue ?? 200) / 400.0, 1.0)
+    }
+
+    private func blendedProgress(metric: Double, task: Double?) -> Double {
+        guard let task else { return clamped(metric) }
+        return clamped(metric * 0.65 + task * 0.35)
+    }
+
+    private func taskProgress(where matches: (CoachPlanItem) -> Bool) -> Double? {
+        let items = planItems.filter(matches)
+        guard !items.isEmpty else { return nil }
+        let completed = items.filter { model.completedTaskIds.contains($0.id) }.count
+        return Double(completed) / Double(items.count)
+    }
+
+    private func isTrainingTask(_ item: CoachPlanItem) -> Bool {
+        let title = item.title.lowercased()
+        let workoutType = item.action.workoutType?.lowercased() ?? "none"
+        return item.action.category == "workout"
+            || ["hiit", "strength", "mobility", "stretching"].contains(workoutType)
+            || item.action.intensity.lowercased() == "moderate"
+            || item.action.intensity.lowercased() == "high"
+            || title.contains("train")
+            || title.contains("strength")
+            || title.contains("workout")
+    }
+
+    private func scoreProgress(named candidates: [String]) -> Double? {
+        for candidate in candidates {
+            if let score = model.coachAnalysis.metricScores.first(where: { $0.name.localizedCaseInsensitiveContains(candidate) }) {
+                return clamped(Double(score.score) / 100.0)
+            }
+        }
+        return nil
+    }
+
+    private func clamped(_ progress: Double) -> Double {
+        max(0, min(progress, 1))
+    }
 }
 
 private struct TodayPlanView: View {
     @ObservedObject var model: WatchProbeViewModel
-    @State private var completedTaskIds: Set<String> = ["drink-500ml-water", "5-min-box-breathing"]
 
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    AppTopBar(title: "Coach")
+                    AppTopBar(title: "Plan")
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Today's Plan")
                             .wpLargeTitle()
@@ -301,13 +379,15 @@ private struct TodayPlanView: View {
                             .foregroundColor(.wpTextSecondary)
                     }
 
+                    LoadingStateStack(model: model)
+
                     VStack(spacing: 18) {
                         ForEach(groupedItems, id: \.category) { group in
                             PlanCategoryCard(
                                 category: group.category,
                                 icon: group.icon,
                                 items: group.items,
-                                completedTaskIds: $completedTaskIds
+                                completedTaskIds: $model.completedTaskIds
                             )
                         }
                     }
@@ -343,9 +423,11 @@ private struct CoachProgressView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    AppTopBar(title: "Coach")
+                    AppTopBar(title: "Progress")
                     Text("Your Progress")
                         .wpLargeTitle()
+
+                    LoadingStateStack(model: model)
 
                     ProgressCoachBubble(model: model)
                     SevenDayGoalHistory()
@@ -367,20 +449,13 @@ private struct AppTopBar: View {
 
     var body: some View {
         HStack {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundColor(.wpPrimary)
-                .frame(width: 44, height: 44)
             Spacer()
             Text(title)
                 .font(.system(size: 16, weight: .heavy))
                 .foregroundColor(.wpPrimary)
             Spacer()
-            Image(systemName: "gearshape")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(.wpPrimary)
-                .frame(width: 44, height: 44)
         }
+        .frame(height: 44)
     }
 }
 
@@ -406,10 +481,11 @@ private struct PersonalitySelector: View {
         .background(Color.wpSurface)
         .clipShape(Capsule())
         .ambientShadow()
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-private struct GoalRingSummary: Identifiable {
+private struct GoalPuzzleSummary: Identifiable {
     let id = UUID()
     let title: String
     let valueText: String
@@ -417,58 +493,106 @@ private struct GoalRingSummary: Identifiable {
     let color: Color
 }
 
-private struct GoalRingsOverview: View {
-    let goals: [GoalRingSummary]
+private struct GoalPuzzleOverview: View {
+    let goals: [GoalPuzzleSummary]
 
     var body: some View {
-        VStack(spacing: 22) {
-            ZStack {
-                ForEach(Array(goals.enumerated()), id: \.element.id) { index, goal in
-                    GoalRing(progress: goal.progress, color: goal.color, diameter: 230 - CGFloat(index * 38), lineWidth: 18 - CGFloat(index * 2))
-                }
-                Image(systemName: "flame.fill")
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .lastTextBaseline) {
+                Text("Today's Goals")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.wpText)
+                Spacer()
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 248)
 
-            HStack {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(goals) { goal in
-                    VStack(spacing: 5) {
-                        Circle()
-                            .fill(goal.color)
-                            .frame(width: 11, height: 11)
-                        Text(goal.title)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.wpText)
-                        Text(goal.valueText)
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.wpText)
-                    }
-                    .frame(maxWidth: .infinity)
+                    GoalPuzzleTile(goal: goal, icon: icon(for: goal.title))
                 }
             }
+            .padding(8)
+            .background(Color.wpSurfaceVariant.opacity(0.58))
+            .cornerRadius(14)
+            .ambientShadow()
+        }
+    }
+
+    private func icon(for title: String) -> String {
+        switch title {
+        case "Move": return "figure.walk"
+        case "Train": return "figure.run"
+        case "Rest": return "moon.fill"
+        case "Mind": return "brain.head.profile"
+        default: return "target"
         }
     }
 }
 
-private struct GoalRing: View {
-    let progress: Double
-    let color: Color
-    let diameter: CGFloat
-    let lineWidth: CGFloat
+private struct GoalPuzzleTile: View {
+    let goal: GoalPuzzleSummary
+    let icon: String
 
     var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.wpSurfaceVariant.opacity(0.45), lineWidth: lineWidth)
-            Circle()
-                .trim(from: 0, to: CGFloat(max(0.03, min(progress, 1))))
-                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
+        GeometryReader { proxy in
+            let fillHeight = proxy.size.height * CGFloat(max(0.04, min(goal.progress, 1)))
+            ZStack(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.wpSurface)
+
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(goal.color.opacity(0.20))
+                    .frame(height: fillHeight)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top) {
+                        Text(goal.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.wpTextSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        Spacer(minLength: 8)
+                        Image(systemName: icon)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(goal.color)
+                            .frame(width: 32, height: 32)
+                            .background(goal.color.opacity(0.12))
+                            .clipShape(Circle())
+                    }
+                    Spacer(minLength: 12)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(goal.valueText)
+                            .font(.system(size: 21, weight: .heavy))
+                            .foregroundColor(.wpText)
+                            .minimumScaleFactor(0.75)
+                        GoalProgressBar(progress: goal.progress, color: goal.color)
+                    }
+                }
+                .padding(12)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.62), lineWidth: 1)
+            )
         }
-        .frame(width: diameter, height: diameter)
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+private struct GoalProgressBar: View {
+    let progress: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.wpSurfaceVariant)
+                Capsule()
+                    .fill(color)
+                    .frame(width: proxy.size.width * CGFloat(max(0, min(progress, 1))))
+            }
+        }
+        .frame(height: 4)
     }
 }
 
@@ -488,7 +612,7 @@ private struct CoachMessageCard: View {
                 .frame(width: 38, height: 38)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 7) {
-                        Text(model.coachPersonality.coachLabel.uppercased())
+                        Text("AI COACH")
                             .wpLabel()
                             .foregroundColor(.wpTextSecondary)
                         Circle()
@@ -506,21 +630,35 @@ private struct CoachMessageCard: View {
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button(action: {}) {
-                Text("I'm on it")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 14)
-                    .background(Color.wpPrimary)
-                    .clipShape(Capsule())
+            if let actionRoute {
+                NavigationLink(destination: MetricActionView(detail: actionRoute.detail, action: actionRoute.item.action.title, actionModel: actionRoute.item.action)) {
+                    coachActionLabel
+                }
+                .buttonStyle(PlainButtonStyle())
+            } else {
+                coachActionLabel
+                    .opacity(0.45)
             }
-            .buttonStyle(PlainButtonStyle())
         }
         .padding(22)
         .background(Color.wpSurface)
         .cornerRadius(12)
         .ambientShadow()
+    }
+
+    private var coachActionLabel: some View {
+        Text("I'm on it")
+            .font(.system(size: 18, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .background(Color.wpPrimary)
+            .clipShape(Capsule())
+    }
+
+    private var actionRoute: (item: CoachPlanItem, detail: MetricDetailData)? {
+        guard let item = CoachPlanBuilder.items(from: model).first else { return nil }
+        return (item, item.detail)
     }
 
     private var coachCopy: String {
@@ -559,6 +697,8 @@ private struct TodayFocusCard: View {
                     }
                 }
             }
+            .padding(.leading, 14)
+            .padding(.trailing, 12)
             .background(Color.wpSurface)
             .overlay(alignment: .leading) {
                 Rectangle()
@@ -1322,8 +1462,9 @@ private struct ProfileDashboardView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    AppTopBar(title: "Coach")
+                    AppTopBar(title: "Profile")
                     ProfileHeader()
+                    LoadingStateStack(model: model)
                     ConnectedDeviceSection(model: model)
                     SettingsSection(model: model)
                     DataSection(model: model)
@@ -1335,6 +1476,55 @@ private struct ProfileDashboardView: View {
             .navigationBarHidden(true)
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+}
+
+private struct LoadingStateStack: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        Group {
+            if model.isSyncing {
+                SyncLoadingCard(status: model.aiStatus)
+            } else if model.isAIAnalyzing {
+                AILoadingCard(status: model.aiStatus)
+            }
+        }
+    }
+}
+
+private struct SyncLoadingCard: View {
+    let status: String
+    @State private var phase = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.wpPrimary.opacity(0.10))
+                    .frame(width: 58, height: 58)
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 23, weight: .bold))
+                    .foregroundColor(.wpPrimary)
+                    .rotationEffect(.degrees(phase ? 360 : 0))
+                    .animation(.linear(duration: 1.15).repeatForever(autoreverses: false), value: phase)
+                Circle()
+                    .fill(Color.wpPrimary)
+                    .frame(width: 8, height: 8)
+                    .offset(x: phase ? 20 : -20, y: 20)
+                    .animation(.easeInOut(duration: 0.65).repeatForever(autoreverses: true), value: phase)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Syncing armband")
+                    .wpHeadline()
+                Text(status.isEmpty ? "Pulling the newest watch data into the app." : status)
+                    .wpCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .card()
+        .onAppear { phase = true }
     }
 }
 
@@ -2649,9 +2839,11 @@ private struct SettingsSection: View {
                             Text("Pick how direct your coach feels.")
                                 .wpCaption()
                         }
+                        Spacer()
                     }
                     PersonalitySelector(selection: $model.coachPersonality)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .card()
 
                 VStack(alignment: .leading, spacing: 12) {

@@ -156,13 +156,39 @@ async function getVertexAccessToken() {
   return accessTokenCache.token;
 }
 
-function coachPrompt(syncId, contextJSON) {
+function coachPersonalityInstruction(personality) {
+  switch (personality) {
+    case "chill":
+      return {
+        label: "Chill Coach",
+        instruction: "Use a relaxed, supportive coaching voice. Sound warm and low-pressure. Keep recommendations gentle, simple, and easy to start.",
+      };
+    case "beastMode":
+      return {
+        label: "Beast Mode Coach",
+        instruction: "Use a direct, high-energy coaching voice without shame or medical claims. Be concise, action-oriented, and motivating while staying recovery-aware.",
+      };
+    case "steady":
+    default:
+      return {
+        label: "Steady Coach",
+        instruction: "Use a steady, practical coaching voice. Be calm, clear, and balanced. Format output as short, specific guidance with no hype.",
+      };
+  }
+}
+
+function coachPrompt(syncId, contextJSON, personality = "steady") {
+  const style = coachPersonalityInstruction(personality);
   return `
 You are an AI health and lifestyle coach inside a native iOS smartwatch companion app.
 
 The app connects to a Veepoo/ES02 smartwatch, syncs stored health data over Bluetooth, saves local JSON snapshots, and shows a dashboard with AI-generated coaching summaries. Every time the user syncs their watch, you must re-analyze the newest data and compare it against saved history, recent trends, timestamps, and the user's normal baseline when available.
 
 Your job is to explain the user's watch data in a clear, supportive, personalized, and non-diagnostic way.
+
+COACH PERSONALITY:
+The user selected ${style.label}.
+${style.instruction}
 
 You are not a doctor. Do not diagnose medical conditions, make medical claims, or tell the user they have a disease. If data looks unusual, concerning, or repeatedly outside the user's normal range, explain the pattern gently and suggest monitoring it or speaking with a healthcare professional.
 
@@ -503,13 +529,14 @@ const server = http.createServer(async (request, response) => {
     const contextJSON = typeof input.contextJSON === "string"
       ? input.contextJSON
       : JSON.stringify(input.contextJSON || {});
+    const personality = String(input.personality || "steady");
 
     if (!syncId || !contextJSON) {
       sendJSON(response, 400, { error: "syncId and contextJSON are required." });
       return;
     }
 
-    const analysis = await callGemini(coachPrompt(syncId, contextJSON));
+    const analysis = await callGemini(coachPrompt(syncId, contextJSON, personality));
     sendJSON(response, 200, { ...analysis, syncId, source: analysis.source || "ai" });
   } catch (error) {
     sendJSON(response, 500, { error: error.message || String(error) });

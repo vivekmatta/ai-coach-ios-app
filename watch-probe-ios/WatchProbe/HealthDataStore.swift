@@ -124,7 +124,7 @@ final class HealthDataStore {
         var analysis: AICoachAnalysis?
         withDatabase { db in
             var statement: OpaquePointer?
-            let sql = "SELECT analysis_json FROM ai_analyses WHERE sync_id = ? LIMIT 1"
+            let sql = "SELECT analysis_json FROM ai_analyses WHERE sync_id = ? ORDER BY generated_at DESC LIMIT 1"
             guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return }
             sqlite3_bind_text(statement, 1, syncId, -1, SQLITE_TRANSIENT)
             if sqlite3_step(statement) == SQLITE_ROW,

@@ -41,12 +41,12 @@ final class AICoachService {
 
     private init() {}
 
-    func analyze(syncId: String, contextJSON: String) async throws -> AICoachAnalysis {
+    func analyze(syncId: String, contextJSON: String, personality: CoachPersonality) async throws -> AICoachAnalysis {
         do {
-            return try await analyzeWithFirebase(syncId: syncId, contextJSON: contextJSON)
+            return try await analyzeWithFirebase(syncId: syncId, contextJSON: contextJSON, personality: personality)
         } catch {
             do {
-                return try await analyzeWithProxy(syncId: syncId, contextJSON: contextJSON)
+                return try await analyzeWithProxy(syncId: syncId, contextJSON: contextJSON, personality: personality)
             } catch {
                 throw error
             }
@@ -72,13 +72,13 @@ final class AICoachService {
         )
     }
 
-    private func analyzeWithFirebase(syncId: String, contextJSON: String) async throws -> AICoachAnalysis {
+    private func analyzeWithFirebase(syncId: String, contextJSON: String, personality: CoachPersonality) async throws -> AICoachAnalysis {
 #if canImport(FirebaseAILogic) || canImport(FirebaseAI)
         guard Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil else {
             throw AICoachServiceError.firebaseConfigMissing
         }
 
-        let prompt = Self.prompt(contextJSON: contextJSON)
+        let prompt = Self.prompt(contextJSON: contextJSON, personality: personality)
         let ai = FirebaseAI.firebaseAI(backend: .googleAI())
         let model = ai.generativeModel(
             modelName: "gemini-2.5-flash",
@@ -98,7 +98,7 @@ final class AICoachService {
 #endif
     }
 
-    private func analyzeWithProxy(syncId: String, contextJSON: String) async throws -> AICoachAnalysis {
+    private func analyzeWithProxy(syncId: String, contextJSON: String, personality: CoachPersonality) async throws -> AICoachAnalysis {
         let rawURL = UserDefaults.standard.string(forKey: "WatchProbe.localAIProxyURL") ?? ""
         guard var components = normalizedProxyComponents(from: rawURL) else {
             throw AICoachServiceError.proxyUnavailable
@@ -113,7 +113,8 @@ final class AICoachService {
 
         let payload = [
             "syncId": syncId,
-            "contextJSON": contextJSON
+            "contextJSON": contextJSON,
+            "personality": personality.rawValue
         ]
         let body = try JSONSerialization.data(withJSONObject: payload, options: [])
         var request = URLRequest(url: url)
@@ -160,13 +161,17 @@ final class AICoachService {
         return base.url?.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
-    static func prompt(contextJSON: String) -> String {
+    static func prompt(contextJSON: String, personality: CoachPersonality) -> String {
         """
         You are an AI health and lifestyle coach inside a native iOS smartwatch companion app.
 
         The app connects to a Veepoo/ES02 smartwatch, syncs stored health data over Bluetooth, saves local JSON snapshots, and shows a dashboard with AI-generated coaching summaries. Every time the user syncs their watch, you must re-analyze the newest data and compare it against saved history, recent trends, timestamps, and the user's normal baseline when available.
 
         Your job is to explain the user's watch data in a clear, supportive, personalized, and non-diagnostic way.
+
+        COACH PERSONALITY:
+        The user selected \(personality.coachLabel).
+        \(personality.promptInstruction)
 
         You are not a doctor. Do not diagnose medical conditions, make medical claims, or tell the user they have a disease. If data looks unusual, concerning, or repeatedly outside the user's normal range, explain the pattern gently and suggest monitoring it or speaking with a healthcare professional.
 

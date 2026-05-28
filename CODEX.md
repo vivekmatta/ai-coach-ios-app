@@ -17,13 +17,13 @@ The previous Expo app, research dashboard, Node server, mock fixtures, and bundl
 - Physical watch connection is verified for `ES02 / 1B:89:F9:42:CF:54`.
 - The app stores the preferred watch and auto-connects when opened.
 - The SwiftUI app now uses a coach-first four-tab shell: Coach, Plan, Progress, and Profile.
-- Coach shows the greeting, Steady/Chill/Beast Mode selector, daily rings, coach message, top checklist items, and compact armband status.
-- Plan shows Fuel, Move, Mind, and Recovery task cards. Tapping a row checks/unchecks it; only the `i` info button opens recommendation detail.
+- Coach shows the greeting, goal-puzzle progress, sync/AI loading states, coach message, top checklist items, and compact armband status.
+- Plan shows Fuel, Move, Mind, and Recovery task cards. Tapping a row checks/unchecks it; only the `i` info button opens recommendation detail. Completion is shared with Coach and contributes to Move, Train, Rest, and Mind progress.
 - Progress keeps analytics secondary: summary cards first, then tap-through sensor detail views for latest data, AI explanations, references, and saved history.
-- Profile keeps non-calendar controls in the same Stitch-style theme: watch sync/connect/disconnect, auto-sync, coach personality, reminders, onboarding replay, local AI proxy, export, and debug log.
+- Profile keeps non-calendar controls in the same Stitch-style theme: watch sync/connect/disconnect, auto-sync, coach personality, reminders, onboarding replay, local AI proxy, export, and debug log. Coach personality lives only in Profile.
 - Calendar-aware coaching code remains available but the current UI hides calendar setup and calendar scheduling until a later pass.
 - `Profile -> App Settings -> Show onboarding` replays the first-run onboarding by resetting only `WatchProbe.onboardingCompleted`; it preserves synced data and other settings for demos.
-- AI coach responses are cached by a SHA-256 hash of the enriched health context. Reuse only AI-backed analyses for matching context; send changed health context through the current prompt.
+- AI coach responses are cached by a SHA-256 hash of the enriched health context, including selected coach personality. Reuse only AI-backed analyses for matching context; send changed health context or changed personality through the current prompt.
 - AI `suggested_actions` are preserved through response normalization and feed the Plan UI. Local defaults fill missing task categories while testing without AI output.
 - Sleep includes a local Apple-style score, duration, sleep/wake time, deep/light/awake minutes, and wake events.
 - Local sync snapshots are saved under `Library/Application Support/WatchResearchData`.
