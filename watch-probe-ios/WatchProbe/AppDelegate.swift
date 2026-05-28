@@ -4,6 +4,10 @@ import UIKit
 import FirebaseCore
 #endif
 
+#if canImport(GoogleSignIn)
+import GoogleSignIn
+#endif
+
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(
@@ -27,6 +31,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         }
 
         return true
+    }
+
+    func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+#if canImport(GoogleSignIn)
+        if GIDSignIn.sharedInstance.handle(url) {
+            return true
+        }
+#endif
+        return false
     }
 
     func application(

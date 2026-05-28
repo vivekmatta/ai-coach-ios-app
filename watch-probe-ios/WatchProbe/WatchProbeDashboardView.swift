@@ -85,6 +85,7 @@ final class WatchProbeViewModel: ObservableObject {
     @Published var metricDetails: [String: MetricDetailData] = [:]
     @Published var coachAnalysis: AICoachAnalysis = .empty
     @Published var aiStatus = "Sync your watch to generate coach insights."
+    @Published var isAIAnalyzing = false
     @Published var discoveredWatches: [WatchDeviceCandidate] = []
     @Published var onboardingCompleted = UserDefaults.standard.bool(forKey: "WatchProbe.onboardingCompleted")
     @Published var notificationPermissionStatus = "Not requested"
@@ -107,6 +108,7 @@ final class WatchProbeViewModel: ObservableObject {
     var temperatureAction: (() -> Void)?
     var completeOnboardingAction: (() -> Void)?
     var notificationPermissionAction: (() -> Void)?
+    var calendarContextChangedAction: (() -> Void)?
     var watchSelectAction: ((WatchDeviceCandidate) -> Void)?
 
     var wellnessScore: Int {
@@ -413,7 +415,11 @@ private struct DashboardView: View {
                 VStack(spacing: 28) {
                     WatchStatusCard(model: model)
                     VStack(spacing: 16) {
+                        if model.isAIAnalyzing {
+                            AILoadingCard(status: model.aiStatus)
+                        }
                         CoachSummaryCard(model: model)
+                        SuggestedActionsList(model: model)
                         WellnessScoreCard(score: model.coachAnalysis.overallScore ?? model.wellnessScore)
                     }
                     MetricsGrid(model: model)
@@ -467,6 +473,42 @@ private struct ProfileDashboardView: View {
     }
 }
 
+private struct AILoadingCard: View {
+    let status: String
+    @State private var phase = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .stroke(Color.wpPrimary.opacity(0.18), lineWidth: 8)
+                    .frame(width: 54, height: 54)
+                Circle()
+                    .trim(from: 0, to: 0.72)
+                    .stroke(Color.wpPrimary, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .frame(width: 54, height: 54)
+                    .rotationEffect(.degrees(phase ? 360 : 0))
+                    .animation(.linear(duration: 1.1).repeatForever(autoreverses: false), value: phase)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.wpPrimary)
+                    .scaleEffect(phase ? 1.08 : 0.92)
+                    .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: phase)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("AI coach is updating")
+                    .wpHeadline()
+                Text(status.isEmpty ? "Reading your latest watch and calendar context." : status)
+                    .wpCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .card()
+        .onAppear { phase = true }
+    }
+}
+
 private struct CoachSummaryCard: View {
     @ObservedObject var model: WatchProbeViewModel
 
@@ -493,8 +535,8 @@ private struct CoachSummaryCard: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if let actionRoute {
-                NavigationLink(destination: MetricActionView(detail: actionRoute.detail, action: actionRoute.action)) {
-                    SuggestedActionDashboardButton(action: actionRoute.action)
+                NavigationLink(destination: MetricActionView(detail: actionRoute.detail, action: actionRoute.action.title, actionModel: actionRoute.action)) {
+                    SuggestedActionDashboardButton(action: actionRoute.action.title)
                 }
                 .buttonStyle(PlainButtonStyle())
             } else {
@@ -510,12 +552,12 @@ private struct CoachSummaryCard: View {
         .card()
     }
 
-    private var actionRoute: (detail: MetricDetailData, action: String)? {
+    private var actionRoute: (detail: MetricDetailData, action: CoachSuggestedAction)? {
         let preferredOrder = ["activity", "sleep", "heartRate", "hrv", "oxygen", "temperature"]
         for id in preferredOrder {
             guard let detail = model.metricDetails[id],
                   let action = detail.suggestedActionText else { continue }
-            return (detail, action)
+            return (detail, typedAction(for: detail, actionText: action))
         }
 
         if model.steps != "--" {
@@ -534,10 +576,17 @@ private struct CoachSummaryCard: View {
                 history: [],
                 aiExplanation: MetricAIExplanation.fallback(metricId: "activity", value: model.steps, title: "Activity")
             )
-            return (detail, detail.suggestedActionText ?? "Increase active movement by 15 minutes this afternoon.")
+            let text = detail.suggestedActionText ?? "Increase active movement by 15 minutes this afternoon."
+            return (detail, typedAction(for: detail, actionText: text))
         }
 
         return nil
+    }
+
+    private func typedAction(for detail: MetricDetailData, actionText: String) -> CoachSuggestedAction {
+        model.coachAnalysis.suggestedActions.first {
+            $0.metricIds.contains(detail.id) || $0.title == actionText
+        } ?? CoachSuggestedAction.legacy(actionText, metricId: detail.id, rationale: detail.actionReasonText)
     }
 }
 
@@ -567,6 +616,89 @@ private struct SuggestedActionDashboardButton: View {
         .background(Color.wpSurfaceLow)
         .cornerRadius(16)
         .neoInset(radius: 16)
+    }
+}
+
+private struct SuggestedActionsList: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        if !model.coachAnalysis.suggestedActions.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("SUGGESTED ACTIONS")
+                    .wpLabel()
+                ForEach(model.coachAnalysis.suggestedActions.prefix(5)) { action in
+                    NavigationLink(destination: MetricActionView(detail: detail(for: action), action: action.title, actionModel: action)) {
+                        HStack(alignment: .top, spacing: 12) {
+                            CircleIcon(systemName: icon(for: action), color: color(for: action))
+                                .scaleEffect(0.82)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(action.title)
+                                    .wpHeadline()
+                                    .lineLimit(2)
+                                Text(action.rationale.isEmpty ? action.category.capitalized : action.rationale)
+                                    .wpCaption()
+                                    .lineLimit(2)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.wpTextSecondary)
+                                .padding(.top, 5)
+                        }
+                        .padding(14)
+                        .background(Color.wpSurfaceLow)
+                        .cornerRadius(16)
+                        .neoInset(radius: 16)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .card()
+        }
+    }
+
+    private func detail(for action: CoachSuggestedAction) -> MetricDetailData {
+        for metricId in action.metricIds {
+            if let detail = model.metricDetails[metricId] {
+                return detail
+            }
+        }
+        return model.metricDetails["activity"] ?? MetricDetailData(
+            id: action.category,
+            title: action.category.capitalized,
+            icon: icon(for: action),
+            colorName: "primary",
+            value: "\(action.durationMinutes) min",
+            detail: action.rationale,
+            rows: [
+                MetricDetailRow("Action", action.title),
+                MetricDetailRow("Intensity", action.intensity.capitalized),
+                MetricDetailRow("Duration", "\(action.durationMinutes) minutes")
+            ],
+            history: [],
+            aiExplanation: nil
+        )
+    }
+
+    private func icon(for action: CoachSuggestedAction) -> String {
+        switch action.category {
+        case "hydration": return "drop.fill"
+        case "sleep": return "bed.double.fill"
+        case "stress": return "wind"
+        case "activity": return action.intensity.lowercased() == "high" ? "flame.fill" : "figure.walk"
+        default: return "target"
+        }
+    }
+
+    private func color(for action: CoachSuggestedAction) -> Color {
+        switch action.category {
+        case "hydration": return .wpBlue
+        case "sleep": return .wpSecondary
+        case "stress": return .wpPrimary
+        case "activity": return .wpOrange
+        default: return .wpPrimary
+        }
     }
 }
 
@@ -704,7 +836,7 @@ private struct DashboardMetricList: View {
                         .buttonStyle(PlainButtonStyle())
 
                         if let action = detail.suggestedActionText {
-                            NavigationLink(destination: MetricActionView(detail: detail, action: action)) {
+                            NavigationLink(destination: MetricActionView(detail: detail, action: action, actionModel: typedAction(for: detail, actionText: action))) {
                                 SuggestedActionSummaryCard(detail: detail, action: action)
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -723,6 +855,12 @@ private struct DashboardMetricList: View {
                 .card()
             }
         }
+    }
+
+    private func typedAction(for detail: MetricDetailData, actionText: String) -> CoachSuggestedAction {
+        model.coachAnalysis.suggestedActions.first {
+            $0.metricIds.contains(detail.id) || $0.title == actionText
+        } ?? CoachSuggestedAction.legacy(actionText, metricId: detail.id, rationale: detail.actionReasonText)
     }
 }
 
@@ -781,8 +919,20 @@ private struct MetricsGrid: View {
 private struct MetricActionView: View {
     let detail: MetricDetailData
     let action: String
+    let actionModel: CoachSuggestedAction?
     @Environment(\.presentationMode) private var presentationMode
     @State private var accepted = false
+    @State private var proposedSlots: [CoachSuggestedTimeSlot] = []
+    @State private var slotStatus = "Finding times from your calendar..."
+    @State private var reminderStatus = ""
+    @State private var scheduledEvents: [CoachScheduledCalendarEvent] = []
+    @State private var showCalendarConfirmation = false
+    @State private var confirmationTitle = ""
+    @State private var confirmationMessage = ""
+
+    private var effectiveAction: CoachSuggestedAction {
+        actionModel ?? CoachSuggestedAction.legacy(action, metricId: detail.id, rationale: detail.actionReasonText)
+    }
 
     var body: some View {
         ScrollView {
@@ -862,6 +1012,82 @@ private struct MetricActionView: View {
                     }
                 }
 
+                if effectiveAction.calendarSuitable {
+                    SectionPanel(title: "SUGGESTED TIMES") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if !scheduledEvents.isEmpty {
+                                ForEach(scheduledEvents) { event in
+                                    ScheduledEventRow(event: event, color: detail.color) {
+                                        deleteCalendarEvent(event)
+                                    }
+                                }
+                            }
+                            if proposedSlots.isEmpty {
+                                Text(slotStatus)
+                                    .wpCaption()
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                ForEach(proposedSlots) { slot in
+                                    Button(action: { addToCalendar(slot) }) {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "calendar.badge.plus")
+                                                .font(.system(size: 18, weight: .semibold))
+                                                .foregroundColor(detail.color)
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(slot.timeLabel)
+                                                    .wpHeadline()
+                                                Text(slot.durationLabel)
+                                                    .wpCaption()
+                                                Text(slot.reason)
+                                                    .wpCaption()
+                                                    .lineLimit(4)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                            Spacer()
+                                        }
+                                        .padding(14)
+                                        .background(Color.wpSurface)
+                                        .cornerRadius(16)
+                                        .shadow(color: Color.wpShadowDark, radius: 10, x: 6, y: 6)
+                                        .shadow(color: Color.white.opacity(0.95), radius: 8, x: -6, y: -6)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                                if !slotStatus.isEmpty {
+                                    Text(slotStatus)
+                                        .wpCaption()
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                        .onAppear {
+                            refreshScheduledEvents()
+                            loadSuggestedTimes()
+                        }
+                    }
+                }
+
+                if !effectiveAction.alternatives.isEmpty || effectiveAction.futureGifPrompt != nil {
+                    SectionPanel(title: "MORE OPTIONS") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(effectiveAction.alternatives, id: \.self) { alternative in
+                                Label(alternative, systemImage: "arrow.triangle.branch")
+                                    .wpCaption()
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            if let prompt = effectiveAction.futureGifPrompt, !prompt.isEmpty {
+                                Label("Workout demo prompt ready for future GIF generation.", systemImage: "figure.strengthtraining.traditional")
+                                    .wpCaption()
+                                Text(prompt)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.wpTextSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .card()
+                    }
+                }
+
                 VStack(spacing: 12) {
                     Button(action: { accepted = true }) {
                         HStack(spacing: 8) {
@@ -879,6 +1105,24 @@ private struct MetricActionView: View {
                         .shadow(color: Color.white.opacity(0.70), radius: 8, x: -4, y: -4)
                     }
 
+                    if effectiveAction.reminderSuitable {
+                        Button(action: scheduleReminder) {
+                            HStack(spacing: 8) {
+                                Text(reminderStatus.isEmpty ? "Schedule Reminders" : reminderStatus)
+                                Image(systemName: "bell.badge")
+                                    .font(.system(size: 15, weight: .semibold))
+                            }
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.wpPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(Color.wpSurface)
+                            .cornerRadius(14)
+                            .shadow(color: Color.wpShadowDark, radius: 10, x: 4, y: 6)
+                            .shadow(color: Color.white.opacity(0.70), radius: 8, x: -4, y: -4)
+                        }
+                    }
+
                     Button(action: { presentationMode.wrappedValue.dismiss() }) {
                         Text("Dismiss")
                             .font(.system(size: 17, weight: .semibold))
@@ -893,6 +1137,52 @@ private struct MetricActionView: View {
         }
         .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
         .navigationBarTitle("AI Coach", displayMode: .inline)
+        .alert(isPresented: $showCalendarConfirmation) {
+            Alert(
+                title: Text(confirmationTitle),
+                message: Text(confirmationMessage),
+                dismissButton: .default(Text("OK"))
+            )
+        }
+    }
+
+    private func loadSuggestedTimes() {
+        guard proposedSlots.isEmpty else { return }
+        CoachCalendarService.shared.suggestedSlotsWithDiagnostics(for: effectiveAction) { slots, diagnostic in
+            proposedSlots = slots
+            slotStatus = slots.isEmpty ? "\(diagnostic) Connect or select calendars in Profile to get specific times." : diagnostic
+        }
+    }
+
+    private func addToCalendar(_ slot: CoachSuggestedTimeSlot) {
+        CoachCalendarService.shared.add(action: effectiveAction, at: slot) { success, message, _ in
+            accepted = success
+            slotStatus = message
+            refreshScheduledEvents()
+            confirmationTitle = success ? "Added to Calendar" : "Calendar Update Failed"
+            confirmationMessage = success ? "\(effectiveAction.title)\n\(slot.timeLabel)" : message
+            showCalendarConfirmation = true
+        }
+    }
+
+    private func deleteCalendarEvent(_ event: CoachScheduledCalendarEvent) {
+        CoachCalendarService.shared.delete(event: event) { success, message in
+            refreshScheduledEvents()
+            slotStatus = message
+            confirmationTitle = success ? "Calendar Event Deleted" : "Delete Failed"
+            confirmationMessage = message
+            showCalendarConfirmation = true
+        }
+    }
+
+    private func refreshScheduledEvents() {
+        scheduledEvents = CoachCalendarService.shared.scheduledEvents(for: effectiveAction.id)
+    }
+
+    private func scheduleReminder() {
+        CoachReminderScheduler.shared.scheduleActionReminders(for: effectiveAction) { success, message in
+            reminderStatus = success ? message : message
+        }
     }
 
     private var historyEvidence: String {
@@ -903,6 +1193,47 @@ private struct MetricActionView: View {
             return "\(section.title) - \(values)"
         }
         .joined(separator: "\n")
+    }
+}
+
+private struct ScheduledEventRow: View {
+    let event: CoachScheduledCalendarEvent
+    let color: Color
+    let deleteAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "calendar.badge.checkmark")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(color)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Scheduled")
+                    .wpHeadline()
+                Text(timeLabel)
+                    .wpCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Button(action: deleteAction) {
+                Image(systemName: "trash")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.wpRed)
+                    .frame(width: 38, height: 38)
+            }
+            .background(Color.wpSurfaceLow)
+            .cornerRadius(19)
+        }
+        .padding(14)
+        .background(Color.wpSurface)
+        .cornerRadius(16)
+        .shadow(color: Color.wpShadowDark, radius: 10, x: 6, y: 6)
+        .shadow(color: Color.white.opacity(0.95), radius: 8, x: -6, y: -6)
+    }
+
+    private var timeLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM d h:mm a"
+        return "\(formatter.string(from: event.start)) - \(event.provider == .google ? "Google" : "iOS Calendar")"
     }
 }
 
@@ -1482,6 +1813,8 @@ private struct ConnectedDeviceSection: View {
 
 private struct SettingsSection: View {
     @ObservedObject var model: WatchProbeViewModel
+    @ObservedObject private var calendarService = CoachCalendarService.shared
+    @State private var calendarMessage = ""
 
     var body: some View {
         SectionPanel(title: "APP SETTINGS") {
@@ -1505,6 +1838,58 @@ private struct SettingsSection: View {
                 }
                 .card()
 
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        CircleIcon(systemName: "calendar", color: .wpPrimary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Calendar-aware coaching")
+                                .wpHeadline()
+                            Text(calendarMessage.isEmpty ? calendarService.status : calendarMessage)
+                                .wpCaption()
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    Picker(
+                        "Privacy",
+                        selection: Binding(
+                            get: { calendarService.privacyMode },
+                            set: { calendarService.privacyMode = $0 }
+                        )
+                    ) {
+                        ForEach(CoachCalendarPrivacyMode.allCases, id: \.self) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+
+                    HStack(spacing: 10) {
+                        ActionButton(title: "iOS Calendar", color: .wpPrimary, filled: false, disabled: false) {
+                            calendarService.requestEventKitAccess { _, message in
+                                calendarMessage = message
+                                model.calendarContextChangedAction?()
+                            }
+                        }
+                        ActionButton(title: "Google", color: .wpPrimary, filled: true, disabled: false) {
+                            calendarService.connectGoogleCalendar { _, message in
+                                calendarMessage = message
+                                model.calendarContextChangedAction?()
+                            }
+                        }
+                    }
+
+                    if !calendarService.calendars.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("SELECTED CALENDARS")
+                                .wpLabel()
+                            ForEach(calendarService.calendars) { calendar in
+                                CalendarSelectionRow(calendar: calendar, service: calendarService)
+                            }
+                        }
+                    }
+                }
+                .card()
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Local AI proxy")
                         .wpHeadline()
@@ -1522,6 +1907,39 @@ private struct SettingsSection: View {
                 }
                 .card()
             }
+        }
+    }
+}
+
+private struct CalendarSelectionRow: View {
+    let calendar: CoachCalendarInfo
+    @ObservedObject var service: CoachCalendarService
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Button(action: { service.toggleCalendar(calendar) }) {
+                    Image(systemName: service.selectedCalendarStorageIds.contains(calendar.storageId) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.wpPrimary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(calendar.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.wpText)
+                    Text(calendar.provider == .google ? "Google Calendar" : "iOS Calendar")
+                        .wpCaption()
+                }
+                Spacer()
+                if calendar.canWrite {
+                    Button(action: { service.chooseWriteCalendar(calendar) }) {
+                        Image(systemName: service.writeCalendarStorageId == calendar.storageId ? "square.and.pencil.circle.fill" : "square.and.pencil")
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundColor(.wpOrange)
+                    }
+                }
+            }
+            Divider()
         }
     }
 }

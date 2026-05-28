@@ -70,7 +70,13 @@ After each saved watch sync, the app stores compact metric summaries in SQLite a
 
 The coach context now includes timestamp-linked sleep windows and heart-rate samples. This lets the AI distinguish heart-rate readings that happened during recorded sleep from readings outside sleep, and it should say the relationship is unclear when timestamps do not overlap.
 
-AI analyses are cached by a SHA-256 fingerprint of the coach context. If a new sync contains the same health data as a previous AI-backed sync, the app reuses the saved analysis and marks it as reused. If the watch data changes, the app sends the newest context through the current AI prompt. Local fallback explanations are saved, but they do not block a later real AI response.
+Calendar-aware coaching is available from `Profile -> App Settings -> Calendar-aware coaching`. The app can connect to iOS calendars or Google Calendar, lets the user choose which calendars the coach should consider, and stores the selected calendars locally. Google Calendar uses the iOS OAuth client configured in `Info.plist` (`GIDClientID` plus the reversed client-ID URL scheme), restores the previous sign-in on launch, and refreshes calendar availability before AI inference when calendars change.
+
+Calendar data is sent to the AI as availability context rather than as a raw full calendar dump. In busy-only mode, event titles are omitted. In title-aware mode, selected event titles are included so suggested times can explain context such as available time before a meeting. Suggested action detail pages show specific calendar time options, why each option was chosen, and can add or delete app-created calendar events.
+
+Suggested actions now support structured action types, durations, intensity, reminders, and workout categories such as HIIT/mobility/strength when appropriate. Accepted actions can schedule local push notifications for reminders such as hydration or movement prompts.
+
+AI analyses are cached by a SHA-256 fingerprint of the full coach context, including calendar availability when calendar-aware coaching is enabled. If a new sync contains the same health and calendar context as a previous AI-backed sync, the app reuses the saved analysis and marks it as reused. If the watch data or calendar context changes, the app sends the newest context through the current AI prompt. Local fallback explanations are saved, but they do not block a later real AI response.
 
 ## Dashboard Behavior
 
@@ -83,6 +89,8 @@ The first page now shows the latest saved values for sleep, HRV, blood oxygen, b
 - sleep score, sleep duration, sleep/wake time, deep/light/awake minutes, and wake events for sleep records
 
 Suggested actions are displayed as separate cards below the related dashboard metric. Tapping an action card opens an action detail view with the recommendation, why the AI suggested it, latest data, history context, and any reference range available.
+
+For calendar-suitable actions, the action detail view also shows suggested calendar times. Each option includes duration plus a short explanation based on selected calendar availability, for example how long the user is free before the next titled event. Tapping a time adds the action to the configured write calendar and shows confirmation; app-created calendar events can be deleted from the same view.
 
 The top Dashboard coach summary also routes its suggested-action area to the full action detail view when an action is available, using the activity fallback if the AI proxy has not returned a recommendation yet.
 

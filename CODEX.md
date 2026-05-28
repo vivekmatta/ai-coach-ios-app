@@ -20,9 +20,12 @@ The previous Expo app, research dashboard, Node server, mock fixtures, and bundl
 - The dashboard loads the newest local JSON on app launch/foreground, then refreshes after sync.
 - Each metric card opens a detail page with latest data, a longer AI explanation, reference range context where available, and saved history grouped from local JSON.
 - Suggested actions are separate dashboard cards below the related metric. Tapping one opens an action detail page explaining why the action was recommended.
+- Suggested actions support structured durations, intensity, reminders, and workout categories. Calendar-suitable actions can show suggested times, add accepted times to the selected calendar, and delete app-created calendar events.
+- Calendar-aware coaching supports iOS Calendar and Google Calendar from Profile settings. Selected calendars, privacy mode, and write calendar are stored in `UserDefaults`; Google Sign-In is restored on app launch.
+- In calendar busy-only mode, event titles are omitted. In title-aware mode, selected event titles can be used in time-slot explanations and AI availability context.
 - The top dashboard suggested-action area also opens the action detail page when a recommendation is available; Activity has a local fallback action when AI is unavailable.
 - The old Insights tab has been removed; keep the Dashboard/Profile structure unless the product direction changes.
-- AI coach responses are cached by a SHA-256 hash of the non-volatile coach context. Reuse only AI-backed analyses for matching data; send changed data through the current prompt.
+- AI coach responses are cached by a SHA-256 hash of the enriched coach context, including calendar availability when connected. Reuse only AI-backed analyses for matching context; send changed health or calendar context through the current prompt.
 - Sleep includes a local Apple-style score, duration, sleep/wake time, deep/light/awake minutes, and wake events.
 - Local sync snapshots are saved under `Library/Application Support/WatchResearchData`.
 - The implemented sync path runs the SDK base daily sync first, then builds JSON from the SDK database snapshot. Direct watch reads remain fallback only.

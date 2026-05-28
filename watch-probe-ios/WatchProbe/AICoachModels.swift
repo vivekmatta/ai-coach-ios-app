@@ -122,6 +122,153 @@ struct CoachCorrelation: Codable, Equatable {
     }
 }
 
+struct CoachActionReminderPlan: Codable, Equatable {
+    let cadence: String
+    let startTime: String
+    let endTime: String
+    let maxPerDay: Int
+    let message: String
+
+    enum CodingKeys: String, CodingKey {
+        case cadence
+        case startTime = "start_time"
+        case endTime = "end_time"
+        case maxPerDay = "max_per_day"
+        case message
+    }
+}
+
+struct CoachSuggestedAction: Codable, Identifiable, Equatable {
+    let id: String
+    let title: String
+    let category: String
+    let rationale: String
+    let durationMinutes: Int
+    let intensity: String
+    let metricIds: [String]
+    let calendarSuitable: Bool
+    let reminderSuitable: Bool
+    let notificationCadence: String
+    let alternatives: [String]
+    let workoutType: String?
+    let futureGifPrompt: String?
+    let reminderPlan: CoachActionReminderPlan?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case category
+        case rationale
+        case durationMinutes = "duration_minutes"
+        case intensity
+        case metricIds = "metric_ids"
+        case calendarSuitable = "calendar_suitable"
+        case reminderSuitable = "reminder_suitable"
+        case notificationCadence = "notification_cadence"
+        case alternatives
+        case workoutType = "workout_type"
+        case futureGifPrompt = "future_gif_prompt"
+        case reminderPlan = "reminder_plan"
+    }
+
+    init(
+        id: String,
+        title: String,
+        category: String,
+        rationale: String,
+        durationMinutes: Int,
+        intensity: String,
+        metricIds: [String],
+        calendarSuitable: Bool,
+        reminderSuitable: Bool,
+        notificationCadence: String,
+        alternatives: [String] = [],
+        workoutType: String? = nil,
+        futureGifPrompt: String? = nil,
+        reminderPlan: CoachActionReminderPlan? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.category = category
+        self.rationale = rationale
+        self.durationMinutes = durationMinutes
+        self.intensity = intensity
+        self.metricIds = metricIds
+        self.calendarSuitable = calendarSuitable
+        self.reminderSuitable = reminderSuitable
+        self.notificationCadence = notificationCadence
+        self.alternatives = alternatives
+        self.workoutType = workoutType
+        self.futureGifPrompt = futureGifPrompt
+        self.reminderPlan = reminderPlan
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedTitle = try container.decodeIfPresent(String.self, forKey: .title) ?? "Suggested action"
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? Self.stableId(from: decodedTitle)
+        self.title = decodedTitle
+        self.category = try container.decodeIfPresent(String.self, forKey: .category) ?? "general"
+        self.rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
+        self.durationMinutes = try container.decodeIfPresent(Int.self, forKey: .durationMinutes) ?? Self.durationGuess(from: decodedTitle)
+        self.intensity = try container.decodeIfPresent(String.self, forKey: .intensity) ?? "low"
+        self.metricIds = try container.decodeIfPresent([String].self, forKey: .metricIds) ?? []
+        self.calendarSuitable = try container.decodeIfPresent(Bool.self, forKey: .calendarSuitable) ?? true
+        self.reminderSuitable = try container.decodeIfPresent(Bool.self, forKey: .reminderSuitable) ?? false
+        self.notificationCadence = try container.decodeIfPresent(String.self, forKey: .notificationCadence) ?? "none"
+        self.alternatives = try container.decodeIfPresent([String].self, forKey: .alternatives) ?? []
+        self.workoutType = try container.decodeIfPresent(String.self, forKey: .workoutType)
+        self.futureGifPrompt = try container.decodeIfPresent(String.self, forKey: .futureGifPrompt)
+        self.reminderPlan = try container.decodeIfPresent(CoachActionReminderPlan.self, forKey: .reminderPlan)
+    }
+
+    static func legacy(_ title: String, metricId: String? = nil, rationale: String = "") -> CoachSuggestedAction {
+        let normalized = title.lowercased()
+        let category: String
+        if normalized.contains("water") || normalized.contains("hydrat") {
+            category = "hydration"
+        } else if normalized.contains("walk") || normalized.contains("step") || normalized.contains("hiit") || normalized.contains("workout") {
+            category = "activity"
+        } else if normalized.contains("sleep") || normalized.contains("bed") {
+            category = "sleep"
+        } else if normalized.contains("breath") || normalized.contains("stress") {
+            category = "stress"
+        } else {
+            category = "general"
+        }
+
+        return CoachSuggestedAction(
+            id: stableId(from: title),
+            title: title,
+            category: category,
+            rationale: rationale,
+            durationMinutes: durationGuess(from: title),
+            intensity: normalized.contains("hiit") ? "high" : "low",
+            metricIds: metricId.map { [$0] } ?? [],
+            calendarSuitable: true,
+            reminderSuitable: category == "hydration" || category == "activity" || category == "sleep",
+            notificationCadence: category == "hydration" ? "every_2_hours" : "once",
+            alternatives: []
+        )
+    }
+
+    private static func durationGuess(from text: String) -> Int {
+        let lower = text.lowercased()
+        if lower.contains("hiit") { return 15 }
+        if lower.contains("walk") { return 15 }
+        if lower.contains("breath") { return 5 }
+        if lower.contains("stretch") || lower.contains("mobility") { return 10 }
+        return 15
+    }
+
+    private static func stableId(from title: String) -> String {
+        let allowed = CharacterSet.alphanumerics
+        let scalars = title.lowercased().unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
+        let slug = String(scalars).split(separator: "-").joined(separator: "-")
+        return slug.isEmpty ? UUID().uuidString : slug
+    }
+}
+
 struct AICoachAnalysis: Codable, Equatable {
     let syncId: String
     let generatedAt: String
@@ -136,6 +283,7 @@ struct AICoachAnalysis: Codable, Equatable {
     let metricScores: [CoachMetricScore]
     let correlationsFound: [CoachCorrelation]
     let coachMessage: String
+    let suggestedActions: [CoachSuggestedAction]
 
     var isAIBacked: Bool {
         source == "ai" || source == "firebase_ai_logic" || source == "ai_cached"
@@ -154,7 +302,8 @@ struct AICoachAnalysis: Codable, Equatable {
         overallStatus: String? = nil,
         metricScores: [CoachMetricScore] = [],
         correlationsFound: [CoachCorrelation] = [],
-        coachMessage: String = ""
+        coachMessage: String = "",
+        suggestedActions: [CoachSuggestedAction] = []
     ) {
         self.syncId = syncId
         self.generatedAt = generatedAt
@@ -169,6 +318,7 @@ struct AICoachAnalysis: Codable, Equatable {
         self.metricScores = metricScores
         self.correlationsFound = correlationsFound
         self.coachMessage = coachMessage
+        self.suggestedActions = suggestedActions
     }
 
     enum LegacyCodingKeys: String, CodingKey {
@@ -185,6 +335,7 @@ struct AICoachAnalysis: Codable, Equatable {
         case metricScores
         case correlationsFound
         case coachMessage
+        case suggestedActions
     }
 
     enum StructuredCodingKeys: String, CodingKey {
@@ -194,6 +345,7 @@ struct AICoachAnalysis: Codable, Equatable {
         case insightCards = "insight_cards"
         case warnings
         case coachMessage = "coach_message"
+        case suggestedActions = "suggested_actions"
         case source
     }
 
@@ -236,9 +388,11 @@ struct AICoachAnalysis: Codable, Equatable {
             self.source = try legacy.decodeIfPresent(String.self, forKey: .source) ?? "ai"
             self.overallScore = try legacy.decodeIfPresent(Int.self, forKey: .overallScore)
             self.overallStatus = try legacy.decodeIfPresent(String.self, forKey: .overallStatus)
-            self.metricScores = try legacy.decodeIfPresent([CoachMetricScore].self, forKey: .metricScores) ?? []
+            let legacyScores = try legacy.decodeIfPresent([CoachMetricScore].self, forKey: .metricScores) ?? []
+            self.metricScores = legacyScores
             self.correlationsFound = try legacy.decodeIfPresent([CoachCorrelation].self, forKey: .correlationsFound) ?? []
             self.coachMessage = try legacy.decodeIfPresent(String.self, forKey: .coachMessage) ?? ""
+            self.suggestedActions = try legacy.decodeIfPresent([CoachSuggestedAction].self, forKey: .suggestedActions) ?? Self.actions(from: legacyScores, priority: self.priority)
             return
         }
 
@@ -269,6 +423,7 @@ struct AICoachAnalysis: Codable, Equatable {
         self.metricScores = scores
         self.correlationsFound = try structured.decodeIfPresent([CoachCorrelation].self, forKey: .correlationsFound) ?? []
         self.coachMessage = try structured.decodeIfPresent(String.self, forKey: .coachMessage) ?? ""
+        self.suggestedActions = try structured.decodeIfPresent([CoachSuggestedAction].self, forKey: .suggestedActions) ?? Self.actions(from: scores, priority: summary.priorityNextAction)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -286,6 +441,7 @@ struct AICoachAnalysis: Codable, Equatable {
         try container.encode(metricScores, forKey: .metricScores)
         try container.encode(correlationsFound, forKey: .correlationsFound)
         try container.encode(coachMessage, forKey: .coachMessage)
+        try container.encode(suggestedActions, forKey: .suggestedActions)
     }
 
     static let empty = AICoachAnalysis(
@@ -295,9 +451,10 @@ struct AICoachAnalysis: Codable, Equatable {
         priority: "Open the app near your watch and run a sync.",
         metricExplanations: [:],
         insightCards: [],
-        warnings: [],
-        source: "empty"
-    )
+            warnings: [],
+            source: "empty",
+            suggestedActions: []
+        )
 
     static func localFallback(syncId: String, generatedAt: String, metrics: [HealthMetricSummary]) -> AICoachAnalysis {
         let explanations = Dictionary(uniqueKeysWithValues: metrics.map {
@@ -329,7 +486,14 @@ struct AICoachAnalysis: Codable, Equatable {
                 )
             ],
             warnings: ["This coaching is informational and is not a diagnosis."],
-            source: "local_fallback"
+            source: "local_fallback",
+            suggestedActions: available.isEmpty ? [
+                CoachSuggestedAction.legacy("Run a fresh watch sync.", metricId: nil)
+            ] : [
+                CoachSuggestedAction.legacy("Take a 15-minute easy walk when your calendar has a natural opening.", metricId: "activity"),
+                CoachSuggestedAction.legacy("Drink water steadily through your next free stretch.", metricId: "hrv"),
+                CoachSuggestedAction.legacy("Review sleep and recovery before choosing a hard workout.", metricId: "sleep")
+            ]
         )
     }
 
@@ -347,8 +511,21 @@ struct AICoachAnalysis: Codable, Equatable {
             overallStatus: overallStatus,
             metricScores: metricScores,
             correlationsFound: correlationsFound,
-            coachMessage: coachMessage
+            coachMessage: coachMessage,
+            suggestedActions: suggestedActions
         )
+    }
+
+    private static func actions(from scores: [CoachMetricScore], priority: String) -> [CoachSuggestedAction] {
+        var actions = scores.compactMap { score -> CoachSuggestedAction? in
+            let action = score.suggestedAction.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !action.isEmpty else { return nil }
+            return CoachSuggestedAction.legacy(action, metricId: metricId(for: score.name), rationale: score.reasoning)
+        }
+        if actions.isEmpty, !priority.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            actions.append(CoachSuggestedAction.legacy(priority))
+        }
+        return actions
     }
 
     private static func metricExplanations(from scores: [CoachMetricScore]) -> [String: MetricAIExplanation] {

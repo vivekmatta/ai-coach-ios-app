@@ -1,6 +1,7 @@
 import UIKit
 import SwiftUI
 import UserNotifications
+import CryptoKit
 
 final class ProbeViewController: UIViewController {
     private enum ActiveFunction: String {
@@ -203,6 +204,12 @@ final class ProbeViewController: UIViewController {
                 self?.viewModel.notificationPermissionStatus = granted ? "Daily reminder set for 8:00 AM" : "Notifications not allowed"
                 self?.appendStatus(granted ? "Morning sync reminder scheduled." : "Notification permission was not granted.")
             }
+        }
+        viewModel.calendarContextChangedAction = { [weak self] in
+            self?.rerunCoachAnalysisForLatestSync(reason: "calendar_context_changed")
+        }
+        CoachCalendarService.shared.calendarContextChanged = { [weak self] in
+            self?.rerunCoachAnalysisForLatestSync(reason: "calendar_context_changed")
         }
         viewModel.completeOnboardingAction = { [weak self] in
             CoachReminderScheduler.shared.scheduleMorningSyncReminder()
@@ -1204,6 +1211,8 @@ final class ProbeViewController: UIViewController {
         stopStepPolling(log: false)
         isCollectionSyncing = true
         viewModel.isSyncing = true
+        viewModel.isAIAnalyzing = true
+        viewModel.aiStatus = "Syncing watch data"
         collectionStatusLabel.text = "Saving local research snapshot..."
         syncNowButton.isEnabled = false
         appendStatus("Starting research sync: \(reason)")
@@ -1213,6 +1222,9 @@ final class ProbeViewController: UIViewController {
             self.extractAndStoreResearchSnapshot(reason: reason, dailySyncSucceeded: success) { fileURL in
                 self.isCollectionSyncing = false
                 self.viewModel.isSyncing = false
+                if fileURL == nil {
+                    self.viewModel.isAIAnalyzing = false
+                }
                 self.syncNowButton.isEnabled = true
                 self.markUpdated()
                 self.updateCollectionLabels()
@@ -2128,50 +2140,99 @@ final class ProbeViewController: UIViewController {
 
     private func runCoachAnalysisIfNeeded(syncId: String) {
         guard !syncId.isEmpty else { return }
-        let contextHash = HealthDataStore.shared.coachPromptContextHash(syncId: syncId)
+        viewModel.isAIAnalyzing = true
+        let calendarAware = CoachCalendarService.shared.hasUsableCalendarContext
         if let cached = HealthDataStore.shared.cachedCoachAnalysis(syncId: syncId),
-           cached.isAIBacked {
+           cached.isAIBacked,
+           !calendarAware {
             viewModel.coachAnalysis = cached
             viewModel.aiStatus = "AI analyzed"
-            return
-        }
-        if let cached = HealthDataStore.shared.cachedCoachAnalysis(contextHash: contextHash) {
-            let reused = cached.reusedForSync(
-                syncId: syncId,
-                generatedAt: HealthDataStore.shared.currentTimestamp()
-            )
-            HealthDataStore.shared.saveCoachAnalysis(reused, contextHash: contextHash)
-            viewModel.coachAnalysis = reused
-            loadLatestSavedSnapshotIntoDashboard(logFailures: false)
-            viewModel.aiStatus = "AI reused"
-            appendStatus("AI coach analysis reused for unchanged sync data.")
+            viewModel.isAIAnalyzing = false
             return
         }
 
         viewModel.aiStatus = "AI analyzing"
-        let context = HealthDataStore.shared.coachPromptContext(syncId: syncId)
         Task { [weak self] in
             guard let self else { return }
             do {
+                let context = await self.coachPromptContextWithCalendar(syncId: syncId)
+                let contextHash = self.coachContextHash(context)
+                if let cached = HealthDataStore.shared.cachedCoachAnalysis(contextHash: contextHash) {
+                    let reused = cached.reusedForSync(
+                        syncId: syncId,
+                        generatedAt: HealthDataStore.shared.currentTimestamp()
+                    )
+                    HealthDataStore.shared.saveCoachAnalysis(reused, contextHash: contextHash)
+                    await MainActor.run {
+                        self.viewModel.coachAnalysis = reused
+                        self.loadLatestSavedSnapshotIntoDashboard(logFailures: false)
+                        self.viewModel.aiStatus = "AI reused"
+                        self.viewModel.isAIAnalyzing = false
+                        self.appendStatus("AI coach analysis reused for unchanged context.")
+                    }
+                    return
+                }
                 let analysis = try await AICoachService.shared.analyze(syncId: syncId, contextJSON: context)
                 HealthDataStore.shared.saveCoachAnalysis(analysis, contextHash: contextHash)
                 await MainActor.run {
                     self.viewModel.coachAnalysis = analysis
                     self.loadLatestSavedSnapshotIntoDashboard(logFailures: false)
                     self.viewModel.aiStatus = "AI analyzed"
+                    self.viewModel.isAIAnalyzing = false
                     self.appendStatus("AI coach analysis saved for sync \(syncId).")
                 }
             } catch {
+                let contextHash = HealthDataStore.shared.coachPromptContextHash(syncId: syncId)
                 let fallback = HealthDataStore.shared.localFallbackAnalysis(syncId: syncId)
                 HealthDataStore.shared.saveCoachAnalysis(fallback, contextHash: contextHash)
                 await MainActor.run {
                     self.viewModel.coachAnalysis = fallback
                     self.loadLatestSavedSnapshotIntoDashboard(logFailures: false)
                     self.viewModel.aiStatus = "AI setup needed"
+                    self.viewModel.isAIAnalyzing = false
                     self.appendStatus("AI coach fallback saved: \(error.localizedDescription)")
                 }
             }
         }
+    }
+
+    private func rerunCoachAnalysisForLatestSync(reason: String) {
+        do {
+            guard let snapshot = try WatchResearchStore.shared.latestSyncSnapshot(),
+                  let syncId = snapshot.payload["syncId"] as? String,
+                  !syncId.isEmpty else {
+                appendStatus("Calendar connected. Sync watch once so AI can use calendar context.")
+                return
+            }
+            viewModel.aiStatus = "AI updating with calendar"
+            viewModel.isAIAnalyzing = true
+            appendStatus("Refreshing AI coach analysis for \(reason).")
+            runCoachAnalysisIfNeeded(syncId: syncId)
+        } catch {
+            appendStatus("Calendar connected, but latest sync could not be loaded: \(error.localizedDescription)")
+        }
+    }
+
+    private func coachPromptContextWithCalendar(syncId: String) async -> String {
+        let base = HealthDataStore.shared.coachPromptContext(syncId: syncId)
+        guard CoachCalendarService.shared.hasUsableCalendarContext,
+              let data = base.data(using: .utf8),
+              var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return base
+        }
+        let availability = await withCheckedContinuation { continuation in
+            CoachCalendarService.shared.availabilityContextForAI { summary in
+                continuation.resume(returning: summary)
+            }
+        }
+        payload["calendarContext"] = availability
+        let enriched = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? data
+        return String(data: enriched, encoding: .utf8) ?? base
+    }
+
+    private func coachContextHash(_ context: String) -> String {
+        let digest = SHA256.hash(data: Data(context.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private func applySnapshotToDashboard(_ payload: [String: Any], fileURL: URL?) {

@@ -16,8 +16,21 @@
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.710752897587-2uhk27k9mcvvtvvrbee871ums5tmhuvq</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>GIDClientID</key>
+	<string>710752897587-2uhk27k9mcvvtvvrbee871ums5tmhuvq.apps.googleusercontent.com</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
@@ -26,6 +39,10 @@
 	<string>Connect to the Veepoo watch for first hardware verification.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to a local AI proxy during development testing.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Read selected calendar availability and add accepted AI Coach actions to your calendar.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Read selected calendar availability and add accepted AI Coach actions to your calendar.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

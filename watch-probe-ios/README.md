@@ -24,6 +24,11 @@ The simulator is not useful for this probe. It cannot talk to the real watch ove
 - opens each dashboard card into a clean detail page with latest data plus saved history
 - shows AI suggested actions as separate dashboard cards under the related metric
 - opens suggested action cards into a detail view explaining why the action was recommended
+- connects to iOS Calendar or Google Calendar for calendar-aware suggested action times
+- restores the previous Google Calendar sign-in and locally saves selected calendars/write calendar
+- shows specific calendar time options with explanations based on nearby busy events
+- adds accepted suggested actions to the selected calendar and can delete app-created calendar events
+- schedules local notifications for reminder-style suggested actions
 - opens the top dashboard suggested-action area into the full action view when a recommendation is available
 - caches AI analyses for unchanged sync data and sends changed data through the newest coach prompt
 - includes an asset catalog logo slot at `WatchProbe/Assets.xcassets/Logo.imageset`
@@ -75,9 +80,29 @@ The first page shows the latest values loaded from the newest local JSON immedia
 
 Suggested actions are no longer embedded inside the metric card. Each action appears as its own smaller card below the related dashboard metric. Tapping that card opens an action page with the recommendation, why it fits the synced data, latest values, prior history, and any available range context.
 
+Suggested action pages can show calendar-aware time options for actions that fit a calendar block, such as walks, workouts, breathing, hydration check-ins, and sleep wind-down tasks. The app checks selected calendars, avoids overlapping busy blocks and repeated unavailable patterns, and explains each option using nearby events. If title-aware calendar mode is enabled, explanations can include selected event titles, such as free time before a meeting.
+
+When a user taps a suggested time, the app creates the event in the selected write calendar and displays a confirmation. App-created events are listed on the action page and can be deleted from the calendar from the same screen. Reminder-style actions can also schedule local push notifications.
+
 The main coach summary card also links to the action page. If live watch data exists but the AI proxy is unavailable, the app can still show a local Activity recommendation so the action screen is reachable during testing.
 
 The separate Insights tab was removed. The dashboard is the main place for summaries, metric detail, and suggested actions; Profile remains available for settings.
+
+## Calendar-Aware Coaching
+
+Open `Profile -> App Settings -> Calendar-aware coaching` to connect calendars.
+
+- `iOS Calendar` requests EventKit access and imports local iOS calendars.
+- `Google` starts Google Sign-In and imports Google Calendar lists/events.
+- `Busy only` sends only busy/free blocks to the coach.
+- `Use titles` includes selected event titles so time suggestions can explain why a slot fits.
+
+The Google setup requires the app's iOS OAuth client in `WatchProbe/Info.plist`:
+
+- `GIDClientID` must be the iOS OAuth client ID.
+- `CFBundleURLTypes` must include the reversed client ID URL scheme.
+
+The current project is configured with the development Google iOS client ID already provided for this app. Google Sign-In persists through the GoogleSignIn SDK; on launch the app restores the previous sign-in, refreshes Google calendars, and keeps selected calendar IDs/write-calendar ID in `UserDefaults`.
 
 ## Local AI Proxy
 
@@ -97,9 +122,9 @@ On iPhone, allow local network access for WatchProbe in `Settings -> Privacy & S
 
 ## AI Coach Cache
 
-After each saved sync, the app builds a compact coach context from metric summaries and timestamp-linked sleep/heart-rate correlation data. It hashes the non-volatile context with SHA-256 and stores that hash with the AI analysis in SQLite.
+After each saved sync, the app builds a compact coach context from metric summaries, timestamp-linked sleep/heart-rate correlation data, and calendar availability when calendar-aware coaching is connected. It hashes the enriched context with SHA-256 and stores that hash with the AI analysis in SQLite.
 
-If a later sync produces the same health-data hash, the app reuses the previous AI-backed analysis for the new sync and shows `AI reused`. If the hash changes, the app calls Firebase AI Logic or the configured local proxy with the current prompt. Local fallback explanations are saved for display, but only AI-backed analyses are reused across matching syncs.
+If a later sync produces the same health/calendar context hash, the app reuses the previous AI-backed analysis for the new sync and shows `AI reused`. If the health data or selected calendar availability changes, the app calls Firebase AI Logic or the configured local proxy with the current prompt. Local fallback explanations are saved for display, but only AI-backed analyses are reused across matching syncs.
 
 Sleep score is an Apple-style local estimate on a 100-point scale:
 
