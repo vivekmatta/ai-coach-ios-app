@@ -54,6 +54,30 @@ struct WatchDeviceCandidate: Identifiable, Equatable {
     let rssi: Int
 }
 
+enum CoachPersonality: String, CaseIterable, Identifiable {
+    case steady
+    case chill
+    case beastMode
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .steady: return "Steady"
+        case .chill: return "Chill"
+        case .beastMode: return "Beast Mode"
+        }
+    }
+
+    var coachLabel: String {
+        switch self {
+        case .steady: return "Steady Coach"
+        case .chill: return "Chill Coach"
+        case .beastMode: return "Beast Mode Coach"
+        }
+    }
+}
+
 final class WatchProbeViewModel: ObservableObject {
     @Published var deviceName = "ES02"
     @Published var deviceAddress = "--"
@@ -92,6 +116,11 @@ final class WatchProbeViewModel: ObservableObject {
     @Published var localAIProxyURL = UserDefaults.standard.string(forKey: "WatchProbe.localAIProxyURL") ?? "" {
         didSet {
             UserDefaults.standard.set(localAIProxyURL, forKey: "WatchProbe.localAIProxyURL")
+        }
+    }
+    @Published var coachPersonality = CoachPersonality(rawValue: UserDefaults.standard.string(forKey: "WatchProbe.coachPersonality") ?? "") ?? .steady {
+        didSet {
+            UserDefaults.standard.set(coachPersonality.rawValue, forKey: "WatchProbe.coachPersonality")
         }
     }
     @Published var debugLog = ""
@@ -153,19 +182,849 @@ struct WatchProbeDashboardView: View {
             OnboardingRootView(model: model)
         } else {
             TabView {
-                DashboardView(model: model)
+                CoachHomeView(model: model)
                     .tabItem {
-                        Image(systemName: "house.fill")
-                        Text("Dashboard")
+                        Image(systemName: "bubble.left.fill")
+                        Text("Coach")
+                    }
+
+                TodayPlanView(model: model)
+                    .tabItem {
+                        Image(systemName: "calendar")
+                        Text("Plan")
+                    }
+
+                CoachProgressView(model: model)
+                    .tabItem {
+                        Image(systemName: "circle.dashed.inset.filled")
+                        Text("Progress")
                     }
 
                 ProfileDashboardView(model: model)
                     .tabItem {
-                        Image(systemName: "person.crop.circle")
+                        Image(systemName: "person")
                         Text("Profile")
                     }
             }
             .accentColor(.wpPrimary)
+        }
+    }
+}
+
+private struct CoachHomeView: View {
+    @ObservedObject var model: WatchProbeViewModel
+    @State private var completedTaskIds: Set<String> = ["protein-rich-lunch"]
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    AppTopBar(title: "Coach")
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Good morning, Alex")
+                            .wpLargeTitle()
+                        PersonalitySelector(selection: $model.coachPersonality)
+                    }
+
+                    GoalRingsOverview(goals: homeGoals)
+
+                    CoachMessageCard(model: model)
+
+                    TodayFocusCard(
+                        items: Array(planItems.prefix(3)),
+                        completedTaskIds: $completedTaskIds
+                    )
+
+                    ArmbandStatusRow(model: model)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 28)
+            }
+            .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
+            .navigationBarHidden(true)
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    private var homeGoals: [GoalRingSummary] {
+        [
+            GoalRingSummary(title: "Move", valueText: percentText(moveProgress), progress: moveProgress, color: .wpPrimary),
+            GoalRingSummary(title: "Train", valueText: percentText(trainProgress), progress: trainProgress, color: .wpSecondary),
+            GoalRingSummary(title: "Rest", valueText: percentText(restProgress), progress: restProgress, color: .wpTertiary),
+            GoalRingSummary(title: "Mind", valueText: percentText(mindProgress), progress: mindProgress, color: .wpPrimaryContainer)
+        ]
+    }
+
+    private var planItems: [CoachPlanItem] {
+        CoachPlanBuilder.items(from: model)
+    }
+
+    private var moveProgress: Double {
+        min(Double(model.steps.numericValue ?? 7500) / 10000.0, 1.0)
+    }
+
+    private var trainProgress: Double {
+        min(Double(model.calories.numericValue ?? 200) / 400.0, 1.0)
+    }
+
+    private var restProgress: Double {
+        min(Double(model.sleepScore.numericValue ?? 85) / 100.0, 1.0)
+    }
+
+    private var mindProgress: Double {
+        let mindItems = planItems.filter { $0.category == "Mind" }
+        guard !mindItems.isEmpty else { return 0.30 }
+        let done = mindItems.filter { completedTaskIds.contains($0.id) || $0.completedByDefault }.count
+        return Double(done) / Double(mindItems.count)
+    }
+
+    private func percentText(_ progress: Double) -> String {
+        "\(Int((progress * 100).rounded()))%"
+    }
+}
+
+private struct TodayPlanView: View {
+    @ObservedObject var model: WatchProbeViewModel
+    @State private var completedTaskIds: Set<String> = ["drink-500ml-water", "5-min-box-breathing"]
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    AppTopBar(title: "Coach")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Today's Plan")
+                            .wpLargeTitle()
+                        Text(Date().stitchDateLabel)
+                            .font(.system(size: 18, weight: .regular))
+                            .foregroundColor(.wpTextSecondary)
+                    }
+
+                    VStack(spacing: 18) {
+                        ForEach(groupedItems, id: \.category) { group in
+                            PlanCategoryCard(
+                                category: group.category,
+                                icon: group.icon,
+                                items: group.items,
+                                completedTaskIds: $completedTaskIds
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 28)
+            }
+            .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
+            .navigationBarHidden(true)
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    private var groupedItems: [(category: String, icon: String, items: [CoachPlanItem])] {
+        let items = CoachPlanBuilder.items(from: model)
+        let order = [
+            ("Fuel", "drop.fill"),
+            ("Move", "figure.run"),
+            ("Mind", "brain.head.profile"),
+            ("Recovery", "moon.fill")
+        ]
+        return order.map { category, icon in
+            (category, icon, items.filter { $0.category == category })
+        }
+    }
+}
+
+private struct CoachProgressView: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    AppTopBar(title: "Coach")
+                    Text("Your Progress")
+                        .wpLargeTitle()
+
+                    ProgressCoachBubble(model: model)
+                    SevenDayGoalHistory()
+                    ProgressMetricCards(model: model)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 28)
+            }
+            .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
+            .navigationBarHidden(true)
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
+    }
+}
+
+private struct AppTopBar: View {
+    let title: String
+
+    var body: some View {
+        HStack {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundColor(.wpPrimary)
+                .frame(width: 44, height: 44)
+            Spacer()
+            Text(title)
+                .font(.system(size: 16, weight: .heavy))
+                .foregroundColor(.wpPrimary)
+            Spacer()
+            Image(systemName: "gearshape")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(.wpPrimary)
+                .frame(width: 44, height: 44)
+        }
+    }
+}
+
+private struct PersonalitySelector: View {
+    @Binding var selection: CoachPersonality
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(CoachPersonality.allCases) { personality in
+                Button(action: { selection = personality }) {
+                    Text(personality.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(selection == personality ? .wpSecondary : .wpText)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
+                        .background(selection == personality ? Color.wpSecondaryContainer : Color.clear)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+        .padding(4)
+        .background(Color.wpSurface)
+        .clipShape(Capsule())
+        .ambientShadow()
+    }
+}
+
+private struct GoalRingSummary: Identifiable {
+    let id = UUID()
+    let title: String
+    let valueText: String
+    let progress: Double
+    let color: Color
+}
+
+private struct GoalRingsOverview: View {
+    let goals: [GoalRingSummary]
+
+    var body: some View {
+        VStack(spacing: 22) {
+            ZStack {
+                ForEach(Array(goals.enumerated()), id: \.element.id) { index, goal in
+                    GoalRing(progress: goal.progress, color: goal.color, diameter: 230 - CGFloat(index * 38), lineWidth: 18 - CGFloat(index * 2))
+                }
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.wpText)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 248)
+
+            HStack {
+                ForEach(goals) { goal in
+                    VStack(spacing: 5) {
+                        Circle()
+                            .fill(goal.color)
+                            .frame(width: 11, height: 11)
+                        Text(goal.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.wpText)
+                        Text(goal.valueText)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.wpText)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+}
+
+private struct GoalRing: View {
+    let progress: Double
+    let color: Color
+    let diameter: CGFloat
+    let lineWidth: CGFloat
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.wpSurfaceVariant.opacity(0.45), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: CGFloat(max(0.03, min(progress, 1))))
+                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: diameter, height: diameter)
+    }
+}
+
+private struct CoachMessageCard: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(Color.wpSecondaryContainer)
+                    Image(systemName: "cross.case.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.wpSecondary)
+                }
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 7) {
+                        Text(model.coachPersonality.coachLabel.uppercased())
+                            .wpLabel()
+                            .foregroundColor(.wpTextSecondary)
+                        Circle()
+                            .fill(Color.wpPrimary)
+                            .frame(width: 5, height: 5)
+                        Text("Just now")
+                            .wpLabel()
+                    }
+                }
+            }
+
+            Text(coachCopy)
+                .font(.system(size: 18, weight: .regular))
+                .foregroundColor(.wpText)
+                .lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: {}) {
+                Text("I'm on it")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 14)
+                    .background(Color.wpPrimary)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .padding(22)
+        .background(Color.wpSurface)
+        .cornerRadius(12)
+        .ambientShadow()
+    }
+
+    private var coachCopy: String {
+        if !model.coachAnalysis.coachMessage.isEmpty {
+            return model.coachAnalysis.coachMessage
+        }
+        if !model.coachAnalysis.priority.isEmpty && model.coachAnalysis.priority != AICoachAnalysis.empty.priority {
+            return model.coachAnalysis.priority
+        }
+        return "You slept well! Let's hit a 20-min walk after lunch to keep the momentum."
+    }
+}
+
+private struct TodayFocusCard: View {
+    let items: [CoachPlanItem]
+    @Binding var completedTaskIds: Set<String>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .lastTextBaseline) {
+                Text("Today's Focus")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.wpText)
+                Spacer()
+                Text("View All")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.wpPrimary)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(items) { item in
+                    PlanTaskRow(item: item, completedTaskIds: $completedTaskIds)
+                    if item.id != items.last?.id {
+                        Divider()
+                            .background(Color.wpSurfaceVariant)
+                    }
+                }
+            }
+            .background(Color.wpSurface)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.wpPrimary)
+                    .frame(width: 4)
+            }
+            .cornerRadius(12)
+            .ambientShadow()
+        }
+    }
+}
+
+private struct PlanCategoryCard: View {
+    let category: String
+    let icon: String
+    let items: [CoachPlanItem]
+    @Binding var completedTaskIds: Set<String>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.wpPrimary)
+                Text(category)
+                    .font(.system(size: 21, weight: .bold))
+                    .foregroundColor(.wpText)
+            }
+
+            VStack(spacing: 12) {
+                ForEach(items) { item in
+                    PlanTaskRow(item: item, completedTaskIds: $completedTaskIds, showsDividerIcon: true)
+                }
+            }
+        }
+        .padding(20)
+        .background(Color.wpSurface)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.wpPrimary)
+                .frame(width: 4)
+        }
+        .cornerRadius(12)
+        .ambientShadow()
+    }
+}
+
+private struct PlanTaskRow: View {
+    let item: CoachPlanItem
+    @Binding var completedTaskIds: Set<String>
+    var showsDividerIcon = false
+
+    private var isCompleted: Bool {
+        completedTaskIds.contains(item.id)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: toggle) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(isCompleted ? Color.wpPrimary : Color.clear)
+                            .overlay(Circle().stroke(isCompleted ? Color.wpPrimary : Color.wpOutlineVariant, lineWidth: 2))
+                            .frame(width: 24, height: 24)
+                        if isCompleted {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .heavy))
+                                .foregroundColor(.white)
+                        }
+                    }
+
+                    Text(item.title)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(isCompleted ? .wpTextSecondary : .wpText)
+                        .strikethrough(isCompleted, color: .wpOutline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+
+            NavigationLink(destination: MetricActionView(detail: item.detail, action: item.action.title, actionModel: item.action)) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.wpOutline)
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .padding(.vertical, showsDividerIcon ? 8 : 10)
+    }
+
+    private func toggle() {
+        if completedTaskIds.contains(item.id) {
+            completedTaskIds.remove(item.id)
+        } else {
+            completedTaskIds.insert(item.id)
+        }
+    }
+}
+
+private struct ArmbandStatusRow: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            CompactStatusItem(icon: "applewatch", text: model.isConnected ? "Armband Connected" : "Armband Waiting")
+            CompactStatusItem(icon: "arrow.triangle.2.circlepath", text: "Sync: \(model.lastSync)")
+            CompactStatusItem(icon: "battery.75", text: model.battery == "--" ? "--" : model.battery)
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundColor(.wpOutline)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct CompactStatusItem: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: icon)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+private struct ProgressCoachBubble: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.wpPrimaryContainer)
+                Image(systemName: "cross.case.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+            }
+            .frame(width: 40, height: 40)
+
+            Text(copy)
+                .font(.system(size: 17, weight: .regular))
+                .foregroundColor(.wpText)
+                .lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.wpSurface)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.wpPrimary)
+                .frame(width: 4)
+        }
+        .cornerRadius(12)
+        .ambientShadow()
+    }
+
+    private var copy: String {
+        if !model.coachAnalysis.overallSummary.isEmpty && model.coachAnalysis.overallSummary != AICoachAnalysis.empty.overallSummary {
+            return model.coachAnalysis.overallSummary
+        }
+        return "You've been remarkably consistent with sleep this week, which is clearly fueling your workout intensity. Let's keep this momentum."
+    }
+}
+
+private struct SevenDayGoalHistory: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("The Last 7 Days")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.wpText)
+            HStack {
+                ForEach(Array(["M", "T", "W", "T", "F", "S", "S"].enumerated()), id: \.offset) { index, day in
+                    VStack(spacing: 9) {
+                        Text(day)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(index == 6 ? .wpPrimary : .wpOutline)
+                        Circle()
+                            .stroke(index == 4 ? Color.wpSecondary.opacity(0.65) : Color.wpPrimary.opacity(index < 2 ? 0.65 : 1), lineWidth: 4)
+                            .frame(width: 28, height: 28)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+}
+
+private struct ProgressMetricCards: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    var body: some View {
+        VStack(spacing: 18) {
+            if let sleepDetail = model.metricDetails["sleep"] {
+                NavigationLink(destination: MetricDetailView(detail: sleepDetail)) {
+                    SleepQualityProgressCard(duration: model.sleepDuration)
+                }
+                .buttonStyle(PlainButtonStyle())
+            } else {
+                SleepQualityProgressCard(duration: model.sleepDuration)
+            }
+
+            if let hrDetail = model.metricDetails["heartRate"] {
+                NavigationLink(destination: MetricDetailView(detail: hrDetail)) {
+                    RestingHeartProgressCard(value: model.heartRate)
+                }
+                .buttonStyle(PlainButtonStyle())
+            } else {
+                RestingHeartProgressCard(value: model.heartRate)
+            }
+
+            HiddenSensorAccessGrid(model: model)
+        }
+    }
+}
+
+private struct SleepQualityProgressCard: View {
+    let duration: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Sleep Quality")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.wpText)
+                Spacer()
+                Image(systemName: "moon")
+                    .foregroundColor(.wpOutline)
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                ForEach([0.62, 0.84, 0.68, 0.84, 0.52], id: \.self) { height in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(height > 0.75 ? Color.wpSecondary : Color.wpSecondaryContainer)
+                        .frame(height: 86 * height)
+                }
+            }
+            .frame(height: 92, alignment: .bottom)
+            Text(duration == "--" ? "Avg. 7h 45m" : "Latest \(duration)")
+                .wpCaption()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .background(Color.wpSurface)
+        .cornerRadius(12)
+        .ambientShadow()
+    }
+}
+
+private struct RestingHeartProgressCard: View {
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Resting HR")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.wpText)
+                Spacer()
+                Image(systemName: "heart")
+                    .foregroundColor(.wpOutline)
+            }
+            GeometryReader { proxy in
+                Path { path in
+                    let w = proxy.size.width
+                    path.move(to: CGPoint(x: 0, y: 54))
+                    path.addCurve(
+                        to: CGPoint(x: w * 0.46, y: 40),
+                        control1: CGPoint(x: w * 0.12, y: 22),
+                        control2: CGPoint(x: w * 0.24, y: 62)
+                    )
+                    path.addCurve(
+                        to: CGPoint(x: w, y: 34),
+                        control1: CGPoint(x: w * 0.64, y: 18),
+                        control2: CGPoint(x: w * 0.84, y: 56)
+                    )
+                }
+                .stroke(Color.wpTertiary, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+            }
+            .frame(height: 92)
+            Text(value == "--" ? "Avg. 52 bpm" : "Latest \(value)")
+                .wpCaption()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .background(Color.wpSurface)
+        .cornerRadius(12)
+        .ambientShadow()
+    }
+}
+
+private struct HiddenSensorAccessGrid: View {
+    @ObservedObject var model: WatchProbeViewModel
+
+    private let metricOrder = ["oxygen", "hrv", "bloodPressure", "bloodGlucose", "temperature", "activity", "ecg", "battery"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Sensor Details")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.wpText)
+            Text("Raw armband data stays tucked away until you open a detail view.")
+                .wpCaption()
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                ForEach(metricOrder, id: \.self) { id in
+                    if let detail = model.metricDetails[id] {
+                        NavigationLink(destination: MetricDetailView(detail: detail)) {
+                            SensorDetailChip(detail: detail)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .background(Color.wpSurface)
+        .cornerRadius(12)
+        .ambientShadow()
+    }
+}
+
+private struct SensorDetailChip: View {
+    let detail: MetricDetailData
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: detail.icon)
+                .foregroundColor(detail.color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(detail.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.wpText)
+                    .lineLimit(1)
+                Text("Open detail")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.wpOutline)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(12)
+        .background(Color.wpSurfaceLow)
+        .cornerRadius(10)
+    }
+}
+
+private struct CoachPlanItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let category: String
+    let icon: String
+    let completedByDefault: Bool
+    let action: CoachSuggestedAction
+    let detail: MetricDetailData
+}
+
+private enum CoachPlanBuilder {
+    static func items(from model: WatchProbeViewModel) -> [CoachPlanItem] {
+        var items = model.coachAnalysis.suggestedActions.prefix(5).map { action in
+            item(for: action, model: model, completedByDefault: false)
+        }
+
+        let defaults = [
+            defaultItem(title: "Hydrate (64oz)", category: "Fuel", icon: "drop", completed: false, metricId: "hrv", model: model),
+            defaultItem(title: "Protein-rich Lunch", category: "Fuel", icon: "fork.knife", completed: true, metricId: "bloodGlucose", model: model),
+            defaultItem(title: "10,000 Steps", category: "Move", icon: "figure.walk", completed: false, metricId: "activity", model: model),
+            defaultItem(title: "20-min Strength Recovery", category: "Move", icon: "figure.strengthtraining.traditional", completed: false, metricId: "activity", model: model),
+            defaultItem(title: "5-min Box Breathing", category: "Mind", icon: "wind", completed: true, metricId: "hrv", model: model),
+            defaultItem(title: "Journal for 2 mins", category: "Mind", icon: "pencil", completed: false, metricId: "hrv", model: model),
+            defaultItem(title: "Bedtime by 10:30 PM", category: "Recovery", icon: "bed.double", completed: false, metricId: "sleep", model: model),
+            defaultItem(title: "Dim lights at 9 PM", category: "Recovery", icon: "lightbulb", completed: false, metricId: "sleep", model: model)
+        ]
+
+        for defaultPlan in defaults where !items.contains(where: { $0.title == defaultPlan.title }) {
+            items.append(defaultPlan)
+        }
+
+        return items
+    }
+
+    private static func item(for action: CoachSuggestedAction, model: WatchProbeViewModel, completedByDefault: Bool) -> CoachPlanItem {
+        let category = planCategory(for: action)
+        let detail = detailForAction(action, model: model)
+        return CoachPlanItem(
+            id: action.id,
+            title: action.title,
+            category: category,
+            icon: icon(for: action, category: category),
+            completedByDefault: completedByDefault,
+            action: action,
+            detail: detail
+        )
+    }
+
+    private static func defaultItem(title: String, category: String, icon: String, completed: Bool, metricId: String, model: WatchProbeViewModel) -> CoachPlanItem {
+        let action = CoachSuggestedAction.legacy(title, metricId: metricId, rationale: "This keeps today's plan practical while the coach learns from more synced armband history.")
+        let detail = model.metricDetails[metricId] ?? MetricDetailData(
+            id: metricId,
+            title: category,
+            icon: icon,
+            colorName: "primary",
+            value: "\(action.durationMinutes) min",
+            detail: action.rationale,
+            rows: [
+                MetricDetailRow("Action", title),
+                MetricDetailRow("Category", category)
+            ],
+            history: [],
+            aiExplanation: nil
+        )
+        return CoachPlanItem(
+            id: action.id,
+            title: title,
+            category: category,
+            icon: icon,
+            completedByDefault: completed,
+            action: action,
+            detail: detail
+        )
+    }
+
+    private static func planCategory(for action: CoachSuggestedAction) -> String {
+        switch action.category {
+        case "hydration": return "Fuel"
+        case "activity": return "Move"
+        case "stress": return "Mind"
+        case "sleep": return "Recovery"
+        default: return "Move"
+        }
+    }
+
+    private static func detailForAction(_ action: CoachSuggestedAction, model: WatchProbeViewModel) -> MetricDetailData {
+        for metricId in action.metricIds {
+            if let detail = model.metricDetails[metricId] {
+                return detail
+            }
+        }
+        return model.metricDetails["activity"] ?? MetricDetailData(
+            id: action.category,
+            title: action.category.capitalized,
+            icon: icon(for: action, category: planCategory(for: action)),
+            colorName: "primary",
+            value: "\(action.durationMinutes) min",
+            detail: action.rationale,
+            rows: [
+                MetricDetailRow("Action", action.title),
+                MetricDetailRow("Intensity", action.intensity.capitalized),
+                MetricDetailRow("Duration", "\(action.durationMinutes) minutes")
+            ],
+            history: [],
+            aiExplanation: nil
+        )
+    }
+
+    private static func icon(for action: CoachSuggestedAction, category: String) -> String {
+        switch category {
+        case "Fuel": return action.category == "hydration" ? "drop" : "fork.knife"
+        case "Move": return "figure.walk"
+        case "Mind": return "wind"
+        case "Recovery": return "moon"
+        default: return "target"
         }
     }
 }
@@ -463,6 +1322,7 @@ private struct ProfileDashboardView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
+                    AppTopBar(title: "Coach")
                     ProfileHeader()
                     ConnectedDeviceSection(model: model)
                     SettingsSection(model: model)
@@ -472,7 +1332,7 @@ private struct ProfileDashboardView: View {
                 .padding(20)
             }
             .background(Color.wpBackground.edgesIgnoringSafeArea(.all))
-            .navigationBarTitle("AI Coach", displayMode: .inline)
+            .navigationBarHidden(true)
         }
         .navigationViewStyle(StackNavigationViewStyle())
     }
@@ -1014,61 +1874,6 @@ private struct MetricActionView: View {
                 if let reference = VitalReference.reference(for: detail.id) {
                     SectionPanel(title: "REFERENCE RANGE") {
                         ReferenceRangeCard(reference: reference, color: detail.color)
-                    }
-                }
-
-                if effectiveAction.calendarSuitable {
-                    SectionPanel(title: "SUGGESTED TIMES") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            if !scheduledEvents.isEmpty {
-                                ForEach(scheduledEvents) { event in
-                                    ScheduledEventRow(event: event, color: detail.color) {
-                                        deleteCalendarEvent(event)
-                                    }
-                                }
-                            }
-                            if proposedSlots.isEmpty {
-                                Text(slotStatus)
-                                    .wpCaption()
-                                    .fixedSize(horizontal: false, vertical: true)
-                            } else {
-                                ForEach(proposedSlots) { slot in
-                                    Button(action: { addToCalendar(slot) }) {
-                                        HStack(spacing: 12) {
-                                            Image(systemName: "calendar.badge.plus")
-                                                .font(.system(size: 18, weight: .semibold))
-                                                .foregroundColor(detail.color)
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(slot.timeLabel)
-                                                    .wpHeadline()
-                                                Text(slot.durationLabel)
-                                                    .wpCaption()
-                                                Text(slot.reason)
-                                                    .wpCaption()
-                                                    .lineLimit(4)
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                            }
-                                            Spacer()
-                                        }
-                                        .padding(14)
-                                        .background(Color.wpSurface)
-                                        .cornerRadius(16)
-                                        .shadow(color: Color.wpShadowDark, radius: 10, x: 6, y: 6)
-                                        .shadow(color: Color.white.opacity(0.95), radius: 8, x: -6, y: -6)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                }
-                                if !slotStatus.isEmpty {
-                                    Text(slotStatus)
-                                        .wpCaption()
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
-                        .onAppear {
-                            refreshScheduledEvents()
-                            loadSuggestedTimes()
-                        }
                     }
                 }
 
@@ -1728,36 +2533,30 @@ private struct MetricRowsCard: View {
 
 private struct ProfileHeader: View {
     var body: some View {
-        VStack(spacing: 12) {
+        HStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.wpSecondary.opacity(0.22), Color.wpPrimary.opacity(0.18)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(Color.wpSecondaryContainer)
                 Image(systemName: "person.fill")
-                    .font(.system(size: 30, weight: .regular))
-                    .foregroundColor(.wpPrimary)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(.wpSecondary)
             }
-            .frame(width: 96, height: 96)
-            .background(Color.wpSurface)
-            .clipShape(Circle())
-            .shadow(color: Color.wpShadowDark, radius: 16, x: 8, y: 8)
-            .shadow(color: Color.white.opacity(0.95), radius: 12, x: -8, y: -8)
+            .frame(width: 58, height: 58)
 
-            VStack(alignment: .center, spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Vivek")
-                    .font(.system(size: 34, weight: .bold))
+                    .font(.system(size: 26, weight: .bold))
                     .foregroundColor(.wpText)
                 Text("Profile & Settings")
                     .wpCaption()
             }
+            Spacer()
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 6)
+        .padding(18)
+        .background(Color.wpSurface)
+        .cornerRadius(12)
+        .ambientShadow()
     }
 }
 
@@ -1805,7 +2604,7 @@ private struct ConnectedDeviceSection: View {
                 .cornerRadius(14)
                 .neoInset(radius: 14)
 
-                HStack(spacing: 10) {
+                VStack(spacing: 10) {
                     ActionButton(title: model.isSyncing ? "Syncing" : "Sync Now", color: .wpPrimary, filled: true, disabled: !model.canSync || model.isSyncing, action: model.syncAction)
                     ActionButton(title: "Connect", color: .wpPrimary, filled: false, disabled: model.isConnected, action: model.connectAction)
                 }
@@ -1818,8 +2617,6 @@ private struct ConnectedDeviceSection: View {
 
 private struct SettingsSection: View {
     @ObservedObject var model: WatchProbeViewModel
-    @ObservedObject private var calendarService = CoachCalendarService.shared
-    @State private var calendarMessage = ""
 
     var body: some View {
         SectionPanel(title: "APP SETTINGS") {
@@ -1845,6 +2642,20 @@ private struct SettingsSection: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 12) {
+                        CircleIcon(systemName: "person.crop.circle.badge.checkmark", color: .wpSecondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Coach personality")
+                                .wpHeadline()
+                            Text("Pick how direct your coach feels.")
+                                .wpCaption()
+                        }
+                    }
+                    PersonalitySelector(selection: $model.coachPersonality)
+                }
+                .card()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
                         CircleIcon(systemName: "sparkles", color: .wpPrimary)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Show onboarding")
@@ -1861,52 +2672,17 @@ private struct SettingsSection: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 12) {
-                        CircleIcon(systemName: "calendar", color: .wpPrimary)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Calendar-aware coaching")
+                        CircleIcon(systemName: "bell.badge.fill", color: .wpOrange)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Coach reminders")
                                 .wpHeadline()
-                            Text(calendarMessage.isEmpty ? calendarService.status : calendarMessage)
+                            Text(model.notificationPermissionStatus)
                                 .wpCaption()
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-
-                    Picker(
-                        "Privacy",
-                        selection: Binding(
-                            get: { calendarService.privacyMode },
-                            set: { calendarService.privacyMode = $0 }
-                        )
-                    ) {
-                        ForEach(CoachCalendarPrivacyMode.allCases, id: \.self) { mode in
-                            Text(mode.label).tag(mode)
-                        }
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
-
-                    HStack(spacing: 10) {
-                        ActionButton(title: "iOS Calendar", color: .wpPrimary, filled: false, disabled: false) {
-                            calendarService.requestEventKitAccess { _, message in
-                                calendarMessage = message
-                                model.calendarContextChangedAction?()
-                            }
-                        }
-                        ActionButton(title: "Google", color: .wpPrimary, filled: true, disabled: false) {
-                            calendarService.connectGoogleCalendar { _, message in
-                                calendarMessage = message
-                                model.calendarContextChangedAction?()
-                            }
-                        }
-                    }
-
-                    if !calendarService.calendars.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("SELECTED CALENDARS")
-                                .wpLabel()
-                            ForEach(calendarService.calendars) { calendar in
-                                CalendarSelectionRow(calendar: calendar, service: calendarService)
-                            }
-                        }
+                    ActionButton(title: "Allow Reminder", color: .wpPrimary, filled: false, disabled: false) {
+                        model.notificationPermissionAction?()
                     }
                 }
                 .card()
@@ -2053,6 +2829,8 @@ private struct ActionButton: View {
         Button(action: { action?() }) {
             Text(title)
                 .font(.system(size: 17, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .foregroundColor(filled ? .white : color)
@@ -2063,7 +2841,6 @@ private struct ActionButton: View {
                         .stroke(filled ? Color.clear : Color.white.opacity(0.72), lineWidth: 1)
                 )
                 .shadow(color: filled ? color.opacity(0.25) : Color.wpShadowDark, radius: filled ? 12 : 8, x: filled ? 0 : 5, y: filled ? 6 : 5)
-                .shadow(color: filled ? Color.clear : Color.white.opacity(0.9), radius: 8, x: -5, y: -5)
         }
         .disabled(disabled)
         .opacity(disabled ? 0.45 : 1)
@@ -2077,14 +2854,7 @@ private struct CircleIcon: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(Color.wpSurface)
-                .shadow(color: Color.wpShadowDark, radius: 8, x: 5, y: 5)
-                .shadow(color: Color.white.opacity(0.95), radius: 8, x: -5, y: -5)
-            Circle()
-                .fill(Color.wpSurfaceLow)
-                .frame(width: 30, height: 30)
-                .shadow(color: Color.wpShadowDark, radius: 4, x: 2, y: 2)
-                .shadow(color: Color.white.opacity(0.9), radius: 4, x: -2, y: -2)
+                .fill(color.opacity(0.14))
             Image(systemName: systemName)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(color)
@@ -2115,17 +2885,22 @@ private struct StatusPill: View {
 }
 
 private extension View {
+    func ambientShadow() -> some View {
+        self
+            .shadow(color: Color.wpPrimary.opacity(0.04), radius: 30, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.025), radius: 12, x: 0, y: 4)
+    }
+
     func card() -> some View {
         self
             .padding(16)
             .background(Color.wpSurface)
-            .cornerRadius(24)
+            .cornerRadius(12)
             .overlay(
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.white.opacity(0.62), lineWidth: 1)
             )
-            .shadow(color: Color.wpShadowDark, radius: 18, x: 10, y: 10)
-            .shadow(color: Color.white.opacity(0.95), radius: 14, x: -10, y: -10)
+            .ambientShadow()
     }
 
     func neoInset(radius: CGFloat) -> some View {
@@ -2161,22 +2936,47 @@ private extension View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.wpTextSecondary)
     }
+
+    func wpLargeTitle() -> some View {
+        self
+            .font(.system(size: 25, weight: .bold))
+            .foregroundColor(.wpText)
+    }
 }
 
 private extension Color {
-    static let wpPrimary = Color(red: 0.0, green: 0.345, blue: 0.737)
-    static let wpPrimaryContainer = Color(red: 0.0, green: 0.439, blue: 0.922)
-    static let wpSecondary = Color(red: 0.0, green: 0.4, blue: 0.529)
-    static let wpBackground = Color(red: 0.941, green: 0.957, blue: 0.973)
+    static let wpPrimary = Color(red: 0.0, green: 0.251, blue: 0.878)
+    static let wpPrimaryContainer = Color(red: 0.180, green: 0.357, blue: 1.0)
+    static let wpSecondary = Color(red: 0.271, green: 0.392, blue: 0.369)
+    static let wpSecondaryContainer = Color(red: 0.780, green: 0.918, blue: 0.882)
+    static let wpTertiary = Color(red: 0.647, green: 0.122, blue: 0.0)
+    static let wpBackground = Color(red: 0.973, green: 0.976, blue: 0.980)
     static let wpSurface = Color.white
-    static let wpSurfaceLow = Color(red: 0.941, green: 0.957, blue: 0.973)
-    static let wpSurfaceHigh = Color(red: 0.882, green: 0.898, blue: 0.922)
-    static let wpText = Color(red: 0.102, green: 0.110, blue: 0.122)
-    static let wpTextSecondary = Color(red: 0.255, green: 0.278, blue: 0.333)
-    static let wpOutline = Color(red: 0.757, green: 0.776, blue: 0.843)
-    static let wpRed = Color(red: 0.73, green: 0.10, blue: 0.10)
+    static let wpSurfaceLow = Color(red: 0.953, green: 0.957, blue: 0.961)
+    static let wpSurfaceHigh = Color(red: 0.882, green: 0.890, blue: 0.894)
+    static let wpSurfaceVariant = Color(red: 0.882, green: 0.890, blue: 0.894)
+    static let wpText = Color(red: 0.098, green: 0.110, blue: 0.114)
+    static let wpTextSecondary = Color(red: 0.263, green: 0.275, blue: 0.337)
+    static let wpOutline = Color(red: 0.455, green: 0.463, blue: 0.533)
+    static let wpOutlineVariant = Color(red: 0.769, green: 0.773, blue: 0.851)
+    static let wpRed = Color(red: 0.729, green: 0.102, blue: 0.102)
     static let wpBlue = Color(red: 0.196, green: 0.678, blue: 0.902)
     static let wpGreen = Color(red: 0.204, green: 0.780, blue: 0.349)
     static let wpOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
     static let wpShadowDark = Color(red: 0.82, green: 0.85, blue: 0.90)
+}
+
+private extension Date {
+    var stitchDateLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMM d"
+        return formatter.string(from: self)
+    }
+}
+
+private extension String {
+    var numericValue: Int? {
+        let digits = filter { $0.isNumber }
+        return digits.isEmpty ? nil : Int(digits)
+    }
 }

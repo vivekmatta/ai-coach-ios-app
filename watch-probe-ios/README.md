@@ -20,18 +20,16 @@ The simulator is not useful for this probe. It cannot talk to the real watch ove
 - runs manual tests for supported functions
 - saves local JSON sync snapshots
 - loads the latest saved JSON into the dashboard on app launch/foreground
-- shows latest health values for sleep, HRV, blood oxygen, blood pressure, glucose, heart rate, activity, temperature, ECG, and battery
-- opens each dashboard card into a clean detail page with latest data plus saved history
-- shows AI suggested actions as separate dashboard cards under the related metric
-- opens suggested action cards into a detail view explaining why the action was recommended
-- connects to iOS Calendar or Google Calendar for calendar-aware suggested action times
-- restores the previous Google Calendar sign-in and locally saves selected calendars/write calendar
-- shows specific calendar time options with explanations based on nearby busy events
-- adds accepted suggested actions to the selected calendar and can delete app-created calendar events
+- presents a four-tab coach-first UI: Coach, Plan, Progress, and Profile
+- shows Apple-style daily rings, an AI coach message, and a task checklist before raw analytics
+- groups daily actions into Fuel, Move, Mind, and Recovery cards
+- keeps raw sensor analytics hidden until the user opens Progress or a metric detail view
+- opens each metric detail page into latest data, AI explanation, reference context, and saved history
+- opens recommendation details only from the task row `i` info button; tapping a task row checks or unchecks it
 - schedules local notifications for reminder-style suggested actions
 - replays onboarding from `Profile -> App Settings -> Show onboarding` without deleting saved app data
-- opens the top dashboard suggested-action area into the full action view when a recommendation is available
 - caches AI analyses for unchanged sync data and sends changed data through the newest coach prompt
+- preserves calendar-aware coaching code, but hides calendar setup/scheduling UI until a later pass
 - includes an asset catalog logo slot at `WatchProbe/Assets.xcassets/Logo.imageset`
 - includes `WatchProbe/Assets.xcassets/AppIcon.appiconset` for the iOS home-screen icon
 - exports the latest sync snapshot through the iOS share sheet
@@ -67,45 +65,28 @@ The app-side auto-sync timer runs every 10 minutes while the app is open/connect
 
 Do not clear the watch as part of normal sync. `veepooSDKClearDeviceData` shuts the bracelet down and has no success callback. Use local snapshots and later watermarks instead.
 
-## Dashboard
+## Coach-First UI
 
-The first page shows the latest values loaded from the newest local JSON immediately on launch, then refreshes after a completed sync. Tapping a metric card opens a detail page:
+The first screen is intentionally coach-first rather than analytics-first. It loads the newest local JSON immediately on launch, then refreshes after a completed sync, but it summarizes the data as goals and actions:
 
-- `Latest Data` shows the most recent parsed value.
-- AI explanation cards show the score context, a longer explanation, and previous data when available.
-- Reference ranges are shown where the app has a useful non-diagnostic range, including ages 12-18 resting heart-rate context.
-- `History` shows saved records grouped by day or timestamp in an organized expandable section.
-- Sleep history shows score, sleep/wake time, duration, deep/light/awake time, and wake events.
-- BP, SpO2, glucose, temperature, and heart rate show timestamped saved samples.
-- Activity, HRV, and ECG show per-day summaries where the saved payload is count-based.
+- `Coach` shows a greeting, Steady/Chill/Beast Mode selector, daily rings, a coach message, top checklist items, and compact armband status.
+- `Plan` shows Fuel, Move, Mind, and Recovery task cards.
+- `Progress` shows a coach insight bubble, seven-day ring history, summary cards, and sensor detail entry points.
+- `Profile` keeps watch controls, auto-sync, coach personality, reminders, onboarding replay, local AI proxy, export, and debug log.
 
-Suggested actions are no longer embedded inside the metric card. Each action appears as its own smaller card below the related dashboard metric. Tapping that card opens an action page with the recommendation, why it fits the synced data, latest values, prior history, and any available range context.
+Raw analytics are still preserved for every supported sensor, but they do not dominate the first-level UI. Progress/detail views expose the latest values, saved history, AI explanations, and reference ranges for sleep, HRV, SpO2, blood pressure, glucose, heart rate, activity, temperature, ECG, battery, and sync metadata.
 
-Suggested action pages can show calendar-aware time options for actions that fit a calendar block, such as walks, workouts, breathing, hydration check-ins, and sleep wind-down tasks. The app checks selected calendars, avoids overlapping busy blocks and repeated unavailable patterns, and explains each option using nearby events. If title-aware calendar mode is enabled, explanations can include selected event titles, such as free time before a meeting.
+Task rows behave like a checklist. Tapping the row checks or unchecks it. Tapping the `i` info button opens the recommendation page with rationale, related data, available reference context, alternatives, and reminders.
 
-When a user taps a suggested time, the app creates the event in the selected write calendar and displays a confirmation. App-created events are listed on the action page and can be deleted from the calendar from the same screen. Reminder-style actions can also schedule local push notifications.
-
-The main coach summary card also links to the action page. If live watch data exists but the AI proxy is unavailable, the app can still show a local Activity recommendation so the action screen is reachable during testing.
-
-The separate Insights tab was removed. The dashboard is the main place for summaries, metric detail, and suggested actions; Profile remains available for settings.
+AI-backed tasks come from the proxy/Firebase `suggested_actions` response. If the AI has not returned enough tasks yet, the app fills the plan with local defaults such as hydration, steps, protein lunch, breathing, journaling, bedtime, and dim lights.
 
 For demos, open `Profile -> App Settings -> Show onboarding` to present the first-run onboarding again. This only resets `WatchProbe.onboardingCompleted`; saved sync snapshots, preferred watch state, calendar settings, and local proxy settings are preserved.
 
 ## Calendar-Aware Coaching
 
-Open `Profile -> App Settings -> Calendar-aware coaching` to connect calendars.
+Calendar-aware coaching code remains in the app, but the current UI hides calendar setup and calendar scheduling. Re-enable it in a later pass when the product is ready to introduce schedule-aware recommendations.
 
-- `iOS Calendar` requests EventKit access and imports local iOS calendars.
-- `Google` starts Google Sign-In and imports Google Calendar lists/events.
-- `Busy only` sends only busy/free blocks to the coach.
-- `Use titles` includes selected event titles so time suggestions can explain why a slot fits.
-
-The Google setup requires the app's iOS OAuth client in `WatchProbe/Info.plist`:
-
-- `GIDClientID` must be the iOS OAuth client ID.
-- `CFBundleURLTypes` must include the reversed client ID URL scheme.
-
-The current project is configured with the development Google iOS client ID already provided for this app. Google Sign-In persists through the GoogleSignIn SDK; on launch the app restores the previous sign-in, refreshes Google calendars, and keeps selected calendar IDs/write-calendar ID in `UserDefaults`.
+The Google setup values remain in `WatchProbe/Info.plist` for future use.
 
 ## Local AI Proxy
 
@@ -125,9 +106,9 @@ On iPhone, allow local network access for WatchProbe in `Settings -> Privacy & S
 
 ## AI Coach Cache
 
-After each saved sync, the app builds a compact coach context from metric summaries, timestamp-linked sleep/heart-rate correlation data, and calendar availability when calendar-aware coaching is connected. It hashes the enriched context with SHA-256 and stores that hash with the AI analysis in SQLite.
+After each saved sync, the app builds a compact coach context from metric summaries and timestamp-linked sleep/heart-rate correlation data. It hashes the enriched context with SHA-256 and stores that hash with the AI analysis in SQLite.
 
-If a later sync produces the same health/calendar context hash, the app reuses the previous AI-backed analysis for the new sync and shows `AI reused`. If the health data or selected calendar availability changes, the app calls Firebase AI Logic or the configured local proxy with the current prompt. Local fallback explanations are saved for display, but only AI-backed analyses are reused across matching syncs.
+If a later sync produces the same health context hash, the app reuses the previous AI-backed analysis for the new sync and shows `AI reused`. If the health data changes, the app calls Firebase AI Logic or the configured local proxy with the current prompt. Local fallback explanations are saved for display, but only AI-backed analyses are reused across matching syncs.
 
 Sleep score is an Apple-style local estimate on a 100-point scale:
 

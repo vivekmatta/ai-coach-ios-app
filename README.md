@@ -5,7 +5,7 @@ This repo is now focused on native iOS bring-up for the Veepoo/ES02 watch.
 - `secrets/google-service-account.json` is the preserved AI credential JSON.
 - `docs/veepoo-sdk-ios-api.md` is the local copy of the manufacturer iOS SDK API document, with local integration notes at the top.
 - `docs/watch-first-connection.md` records the hardware milestones and next test checklist.
-- `watch-probe-ios/` contains the native iOS watch app for scanning, auto-connecting, reading live metrics, and syncing watch-stored data into local JSON files.
+- `watch-probe-ios/` contains the native iOS watch app for scanning, auto-connecting, reading live metrics, syncing watch-stored data into local JSON files, and presenting a coach-first SwiftUI experience.
 
 Before doing watch work, read `docs/veepoo-sdk-ios-api.md`, `docs/watch-first-connection.md`, and `watch-probe-ios/README.md`.
 
@@ -36,7 +36,7 @@ Each sync snapshot includes:
 
 The current sync path runs the vendor SDK base daily sync first, then builds JSON from the SDK database. This fixed the sleep visibility problem: sleep now appears in exported JSON when the SDK database has records. Direct watch reads remain as fallback only, and SDK data commands must stay serial.
 
-Recent ES02 logs show the watch exposing `3/3` saved days during base daily sync. The app writes a new JSON file after completed syncs and does not prune local JSON files. On app launch and foreground, the dashboard immediately loads the newest local JSON, then refreshes again after the next successful watch sync.
+Recent ES02 logs show the watch exposing `3/3` saved days during base daily sync. The app writes a new JSON file after completed syncs and does not prune local JSON files. On app launch and foreground, the app immediately loads the newest local JSON, then refreshes again after the next successful watch sync.
 
 The app-side auto-sync interval is 10 minutes while the phone app is open/connected. That is not the same as configuring the watch to measure every 10 minutes. The watch can measure/store supported history offline according to its firmware/settings, but `WatchProbe` does not yet explicitly audit or enable each automatic measurement switch.
 
@@ -66,37 +66,32 @@ The app tries Firebase AI Logic first. If `GoogleService-Info.plist` is missing,
 
 ## AI Coach Behavior
 
-After each saved watch sync, the app stores compact metric summaries in SQLite and asks the AI coach for structured Dashboard explanations, category scores, correlations, warnings, and suggested actions. The prompt is non-diagnostic, requires timestamp-backed correlations, and tells the model to explain missing, stale, partial, or uncertain data instead of inventing conclusions.
+After each saved watch sync, the app stores compact metric summaries in SQLite and asks the AI coach for structured explanations, category scores, correlations, warnings, coach messages, and suggested actions. The prompt is non-diagnostic, requires timestamp-backed correlations, and tells the model to explain missing, stale, partial, or uncertain data instead of inventing conclusions.
 
 The coach context now includes timestamp-linked sleep windows and heart-rate samples. This lets the AI distinguish heart-rate readings that happened during recorded sleep from readings outside sleep, and it should say the relationship is unclear when timestamps do not overlap.
 
-Calendar-aware coaching is available from `Profile -> App Settings -> Calendar-aware coaching`. The app can connect to iOS calendars or Google Calendar, lets the user choose which calendars the coach should consider, and stores the selected calendars locally. Google Calendar uses the iOS OAuth client configured in `Info.plist` (`GIDClientID` plus the reversed client-ID URL scheme), restores the previous sign-in on launch, and refreshes calendar availability before AI inference when calendars change.
+Calendar-aware coaching code remains in the project, but the current coach-first UI hides calendar setup and calendar scheduling. Calendar UI will be reintroduced in a later pass.
 
 To replay the first-run flow for demos, use `Profile -> App Settings -> Show onboarding`. This marks only the onboarding flag as incomplete, so saved watch data, calendar choices, proxy settings, and other app data remain in place.
 
-Calendar data is sent to the AI as availability context rather than as a raw full calendar dump. In busy-only mode, event titles are omitted. In title-aware mode, selected event titles are included so suggested times can explain context such as available time before a meeting. Suggested action detail pages show specific calendar time options, why each option was chosen, and can add or delete app-created calendar events.
+Suggested actions support structured action types, durations, intensity, reminders, and workout categories such as HIIT/mobility/strength when appropriate. Accepted actions can schedule local push notifications for reminders such as hydration or movement prompts.
 
-Suggested actions now support structured action types, durations, intensity, reminders, and workout categories such as HIIT/mobility/strength when appropriate. Accepted actions can schedule local push notifications for reminders such as hydration or movement prompts.
+AI analyses are cached by a SHA-256 fingerprint of the coach context. If a new sync contains the same health context as a previous AI-backed sync, the app reuses the saved analysis and marks it as reused. If the watch data changes, the app sends the newest context through the current AI prompt. Local fallback explanations are saved, but they do not block a later real AI response.
 
-AI analyses are cached by a SHA-256 fingerprint of the full coach context, including calendar availability when calendar-aware coaching is enabled. If a new sync contains the same health and calendar context as a previous AI-backed sync, the app reuses the saved analysis and marks it as reused. If the watch data or calendar context changes, the app sends the newest context through the current AI prompt. Local fallback explanations are saved, but they do not block a later real AI response.
+## Coach-First App Behavior
 
-## Dashboard Behavior
+The app now uses a four-tab coach-first SwiftUI shell inspired by the Stitch prototype:
 
-The first page now shows the latest saved values for sleep, HRV, blood oxygen, blood pressure, glucose, heart rate, activity, temperature, ECG, and battery. Each card is tappable and opens a detail page with:
+- `Coach`: greeting, Steady/Chill/Beast Mode personality selector, Apple-style daily rings, coach message, top action checklist, and compact armband status.
+- `Plan`: daily task cards grouped as Fuel, Move, Mind, and Recovery.
+- `Progress`: plain-English progress summaries first, with sensor analytics hidden behind tap-through detail views.
+- `Profile`: watch controls, auto-sync, coach personality, reminders, onboarding replay, local AI proxy, export, and debug log.
 
-- latest parsed data
-- a longer AI explanation backed by previous saved data when available
-- a relevant reference range, such as the adolescent resting heart-rate range used for ages 12-18
-- organized history grouped from saved local JSON files
-- sleep score, sleep duration, sleep/wake time, deep/light/awake minutes, and wake events for sleep records
+Raw sensor analytics are not shown on the first-level Coach or Plan screens. Sleep, HRV, SpO2, blood pressure, glucose, heart rate, activity, temperature, ECG, battery, sync metadata, AI explanations, references, and saved history remain available from Progress/detail views.
 
-Suggested actions are displayed as separate cards below the related dashboard metric. Tapping an action card opens an action detail view with the recommendation, why the AI suggested it, latest data, history context, and any reference range available.
+The Plan checklist is action-first. Tapping a task row checks or unchecks it; tapping only the `i` info button opens the recommendation detail view. AI-backed tasks come from `suggested_actions`; local fallback tasks keep the UI useful before a proxy response is available.
 
-For calendar-suitable actions, the action detail view also shows suggested calendar times. Each option includes duration plus a short explanation based on selected calendar availability, for example how long the user is free before the next titled event. Tapping a time adds the action to the configured write calendar and shows confirmation; app-created calendar events can be deleted from the same view.
-
-The top Dashboard coach summary also routes its suggested-action area to the full action detail view when an action is available, using the activity fallback if the AI proxy has not returned a recommendation yet.
-
-The old Insights tab has been removed. The app keeps the main Dashboard and Profile flow, with deeper explanations available by tapping cards.
+The old analytics-first Dashboard/Insights structure has been replaced by the Coach/Plan/Progress/Profile flow.
 
 Sleep score is a local Apple-style estimate:
 

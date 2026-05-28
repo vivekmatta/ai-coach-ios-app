@@ -67,7 +67,8 @@ final class AICoachService {
             overallStatus: decoded.overallStatus,
             metricScores: decoded.metricScores,
             correlationsFound: decoded.correlationsFound,
-            coachMessage: decoded.coachMessage
+            coachMessage: decoded.coachMessage,
+            suggestedActions: decoded.suggestedActions
         )
     }
 

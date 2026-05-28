@@ -16,17 +16,15 @@ The previous Expo app, research dashboard, Node server, mock fixtures, and bundl
 
 - Physical watch connection is verified for `ES02 / 1B:89:F9:42:CF:54`.
 - The app stores the preferred watch and auto-connects when opened.
-- The SwiftUI dashboard shows latest saved values for sleep, HRV, blood oxygen, blood pressure, glucose, heart rate, activity, temperature, ECG, battery, sync/export controls, and profile controls.
-- The dashboard loads the newest local JSON on app launch/foreground, then refreshes after sync.
-- Each metric card opens a detail page with latest data, a longer AI explanation, reference range context where available, and saved history grouped from local JSON.
-- Suggested actions are separate dashboard cards below the related metric. Tapping one opens an action detail page explaining why the action was recommended.
-- Suggested actions support structured durations, intensity, reminders, and workout categories. Calendar-suitable actions can show suggested times, add accepted times to the selected calendar, and delete app-created calendar events.
-- Calendar-aware coaching supports iOS Calendar and Google Calendar from Profile settings. Selected calendars, privacy mode, and write calendar are stored in `UserDefaults`; Google Sign-In is restored on app launch.
+- The SwiftUI app now uses a coach-first four-tab shell: Coach, Plan, Progress, and Profile.
+- Coach shows the greeting, Steady/Chill/Beast Mode selector, daily rings, coach message, top checklist items, and compact armband status.
+- Plan shows Fuel, Move, Mind, and Recovery task cards. Tapping a row checks/unchecks it; only the `i` info button opens recommendation detail.
+- Progress keeps analytics secondary: summary cards first, then tap-through sensor detail views for latest data, AI explanations, references, and saved history.
+- Profile keeps non-calendar controls in the same Stitch-style theme: watch sync/connect/disconnect, auto-sync, coach personality, reminders, onboarding replay, local AI proxy, export, and debug log.
+- Calendar-aware coaching code remains available but the current UI hides calendar setup and calendar scheduling until a later pass.
 - `Profile -> App Settings -> Show onboarding` replays the first-run onboarding by resetting only `WatchProbe.onboardingCompleted`; it preserves synced data and other settings for demos.
-- In calendar busy-only mode, event titles are omitted. In title-aware mode, selected event titles can be used in time-slot explanations and AI availability context.
-- The top dashboard suggested-action area also opens the action detail page when a recommendation is available; Activity has a local fallback action when AI is unavailable.
-- The old Insights tab has been removed; keep the Dashboard/Profile structure unless the product direction changes.
-- AI coach responses are cached by a SHA-256 hash of the enriched coach context, including calendar availability when connected. Reuse only AI-backed analyses for matching context; send changed health or calendar context through the current prompt.
+- AI coach responses are cached by a SHA-256 hash of the enriched health context. Reuse only AI-backed analyses for matching context; send changed health context through the current prompt.
+- AI `suggested_actions` are preserved through response normalization and feed the Plan UI. Local defaults fill missing task categories while testing without AI output.
 - Sleep includes a local Apple-style score, duration, sleep/wake time, deep/light/awake minutes, and wake events.
 - Local sync snapshots are saved under `Library/Application Support/WatchResearchData`.
 - The implemented sync path runs the SDK base daily sync first, then builds JSON from the SDK database snapshot. Direct watch reads remain fallback only.
