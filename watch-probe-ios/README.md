@@ -1,50 +1,69 @@
-# WatchProbe
+# WatchProbe iOS App
 
-Native iOS app for the Veepoo/ES02 watch.
+`WatchProbe` is the native iOS app in this repo. It connects to a Veepoo/ES02 smartwatch with the manufacturer SDK, syncs watch-stored health data, writes local JSON snapshots, and presents a coach-first SwiftUI interface.
 
-Open `WatchProbe.xcodeproj`, select a physical iPhone, choose the `WatchProbe` scheme, set signing if Xcode asks, and run.
+Open this project in Xcode:
 
-The simulator is not useful for this probe. It cannot talk to the real watch over Bluetooth.
+```bash
+open watch-probe-ios/WatchProbe.xcodeproj
+```
+
+Run the `WatchProbe` scheme on a physical iPhone for real watch testing. The simulator cannot connect to the watch and the current target links device-only SDK frameworks.
+
+## Physical iPhone Setup
+
+1. Start the local proxy from the repo root:
+
+   ```bash
+   GEMINI_API_KEY="<your-gemini-api-key>" node server/coach-ai-proxy.mjs
+   ```
+
+   or:
+
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/to/service-account.json" node server/coach-ai-proxy.mjs
+   ```
+
+2. Connect an iPhone to the Mac, unlock it, and trust the Mac.
+3. In Xcode, select the `WatchProbe` scheme and the physical iPhone destination.
+4. In `Signing & Capabilities`, choose your Apple developer team.
+5. Change the bundle identifier if Xcode says it is already registered to another team.
+6. Run the app and allow Bluetooth and Local Network permissions.
+7. In `Profile -> App Settings -> Local AI proxy`, enter the Mac LAN URL, for example `http://192.168.1.25:8790`.
+8. Scan, connect to the watch, wait for password verification, and sync.
+
+The phone cannot use `localhost` for the Mac proxy. Use the Mac's LAN IP address. If local network access fails, check `Settings -> Privacy & Security -> Local Network -> WatchProbe` on the iPhone.
 
 ## What The App Does
 
-- initializes `VPBleCentralManage`
-- scans with `veepooSDKStartScanDeviceAndReceiveScanningDevice`
-- connects with `veepooSDKConnectDevice`
-- logs SDK connection states
-- reads battery/charge state after `BleVerifyPasswordSuccess`
-- remembers the preferred watch after a successful verification
-- auto-connects on app open
-- disables the Veepoo SDK's internal `automaticConnection` so the app owns one clean scan/connect flow
-- reads steps/live measurements
-- runs manual tests for supported functions
-- saves local JSON sync snapshots
-- loads the latest saved JSON into the dashboard on app launch/foreground
-- presents a four-tab coach-first UI: Coach, Plan, Progress, and Profile
-- shows Apple-style daily rings, an AI coach message, and a task checklist before raw analytics
-- groups daily actions into Fuel, Move, Mind, and Recovery cards
-- keeps raw sensor analytics hidden until the user opens Progress or a metric detail view
-- opens each metric detail page into latest data, AI explanation, reference context, and saved history
-- opens recommendation details only from the task row `i` info button; tapping a task row checks or unchecks it
-- schedules local notifications for reminder-style suggested actions
-- replays onboarding from `Profile -> App Settings -> Show onboarding` without deleting saved app data
-- caches AI analyses for unchanged sync data and sends changed data through the newest coach prompt
-- preserves calendar-aware coaching code, but hides calendar setup/scheduling UI until a later pass
-- includes an asset catalog logo slot at `WatchProbe/Assets.xcassets/Logo.imageset`
-- includes `WatchProbe/Assets.xcassets/AppIcon.appiconset` for the iOS home-screen icon
-- exports the latest sync snapshot through the iOS share sheet
+- Initializes `VPBleCentralManage`.
+- Scans with `veepooSDKStartScanDeviceAndReceiveScanningDevice`.
+- Connects with `veepooSDKConnectDevice`.
+- Waits for `BleVerifyPasswordSuccess`.
+- Reads battery and charge state.
+- Stores the preferred watch and auto-connects on later app opens.
+- Disables the Veepoo SDK's internal `automaticConnection` so the app owns one scan/connect flow.
+- Runs SDK base daily sync first and serializes all SDK data commands.
+- Saves local JSON sync snapshots.
+- Loads the latest saved JSON on launch and foreground.
+- Presents Coach, Plan, Progress, and Profile tabs.
+- Sends changed watch summaries to Firebase AI Logic when configured or to the local proxy.
+- Caches AI analyses by health-context hash and selected coach personality.
+- Exports the latest sync snapshot through the iOS share sheet.
 
-The verified watch is `ES02 / 1B:89:F9:42:CF:54`.
+The verified development watch was `ES02 / 1B:89:F9:42:CF:54`.
 
-## Local Data Sync
+## Local Data
 
-The app writes sync files to the app sandbox:
+The app writes sync files inside the app sandbox:
 
-`Library/Application Support/WatchResearchData/<device>/<date>/sync-*.json`
+```text
+Library/Application Support/WatchResearchData/<device>/<date>/sync-*.json
+```
 
-The sync payload contains SDK database fields plus direct-read fallback data. The app now runs the SDK base daily sync first because the vendor demo uses that path to populate the SDK database for accurate sleep. After a successful base sync, the JSON is built from the SDK database snapshot.
+The sync payload contains SDK database fields plus direct-read fallback data where available:
 
-- `steps`
+- steps
 - accurate sleep / sleep
 - heart half-hour data
 - blood oxygen
@@ -53,82 +72,49 @@ The sync payload contains SDK database fields plus direct-read fallback data. Th
 - HRV counts or skipped diagnostics
 - ECG counts
 - temperature when supported
-- `temperature` when supported
 - sports records in metadata
 - manual measurements in metadata
 
-The earlier direct-read-only path is still used as a fallback if the SDK base daily sync does not complete. SDK data commands must remain serial; do not run watch data reads concurrently.
+The current base daily sync reads up to the watch-reported saved days. Recent ES02 runs exposed `3/3`, so JSON usually contains the latest three on-watch days. Local JSON files are not pruned.
 
-The current base daily sync reads up to the watch-reported saved days. Recent ES02 runs exposed `3/3`, so JSON usually contains the latest three on-watch days. Local JSON files are not pruned, and the dashboard merges the newest saved copy of each day across local sync files for card history.
+Do not clear the watch as part of normal sync. `veepooSDKClearDeviceData` shuts the bracelet down and has no success callback. Use local snapshots and future watermarks instead.
 
-The app-side auto-sync timer runs every 10 minutes while the app is open/connected. That is separate from the watch's own offline measurement interval. The watch can store supported data while disconnected, but this app does not yet explicitly enable or configure every automatic measurement switch.
+## Coach UI
 
-Do not clear the watch as part of normal sync. `veepooSDKClearDeviceData` shuts the bracelet down and has no success callback. Use local snapshots and later watermarks instead.
+The first screen is coach-first rather than analytics-first:
 
-## Coach-First UI
-
-The first screen is intentionally coach-first rather than analytics-first. It loads the newest local JSON immediately on launch, then refreshes after a completed sync, but it summarizes the data as goals and actions:
-
-- `Coach` shows a greeting, Steady/Chill/Beast Mode selector, daily rings, a coach message, top checklist items, and compact armband status.
+- `Coach` shows greeting, daily progress, coach message, top checklist items, and compact watch status.
 - `Plan` shows Fuel, Move, Mind, and Recovery task cards.
-- `Progress` shows a coach insight bubble, seven-day ring history, summary cards, and sensor detail entry points.
+- `Progress` shows summaries first, then sensor detail entry points.
 - `Profile` keeps watch controls, auto-sync, coach personality, reminders, onboarding replay, local AI proxy, export, and debug log.
 
-Raw analytics are still preserved for every supported sensor, but they do not dominate the first-level UI. Progress/detail views expose the latest values, saved history, AI explanations, and reference ranges for sleep, HRV, SpO2, blood pressure, glucose, heart rate, activity, temperature, ECG, battery, and sync metadata.
+Raw analytics remain available from Progress and metric detail views for sleep, HRV, SpO2, blood pressure, glucose, heart rate, activity, temperature, ECG, battery, and sync metadata.
 
-Task rows behave like a checklist. Tapping the row checks or unchecks it. Tapping the `i` info button opens the recommendation page with rationale, related data, available reference context, alternatives, and reminders.
-
-AI-backed tasks come from the proxy/Firebase `suggested_actions` response. If the AI has not returned enough tasks yet, the app fills the plan with local defaults such as hydration, steps, protein lunch, breathing, journaling, bedtime, and dim lights.
-
-For demos, open `Profile -> App Settings -> Show onboarding` to present the first-run onboarding again. This only resets `WatchProbe.onboardingCompleted`; saved sync snapshots, preferred watch state, calendar settings, and local proxy settings are preserved.
-
-## Calendar-Aware Coaching
-
-Calendar-aware coaching code remains in the app, but the current UI hides calendar setup and calendar scheduling. Re-enable it in a later pass when the product is ready to introduce schedule-aware recommendations.
-
-The Google setup values remain in `WatchProbe/Info.plist` for future use.
+For demos, open `Profile -> App Settings -> Show onboarding`. This resets only `WatchProbe.onboardingCompleted`; saved sync snapshots, preferred watch state, calendar settings, and local proxy settings are preserved.
 
 ## Local AI Proxy
 
-Run the development proxy from the repo root:
+The proxy listens on port `8790` by default. The app calls `/analyze` after it has a saved sync snapshot and a compact coach context. If the app cannot reach Firebase AI Logic or the local proxy, it keeps local watch data visible but cannot produce fresh AI-backed coaching.
 
-```bash
-GOOGLE_APPLICATION_CREDENTIALS=secrets/google-service-account.json node server/coach-ai-proxy.mjs
-```
-
-The proxy listens on port `8790`. In the app's Profile settings, enter the Mac LAN address with the port, for example:
-
-`http://10.105.80.5:8790`
-
-Entering only `10.105.80.5` is also accepted; the app normalizes it to `http://10.105.80.5:8790` before calling `/analyze`.
-
-On iPhone, allow local network access for WatchProbe in `Settings -> Privacy & Security -> Local Network`. If iOS previously denied it and the app is missing from that list, delete the app, reinstall from Xcode, and tap Allow when prompted.
-
-## AI Coach Cache
-
-After each saved sync, the app builds a compact coach context from metric summaries and timestamp-linked sleep/heart-rate correlation data. It hashes the enriched context with SHA-256 and stores that hash with the AI analysis in SQLite.
-
-If a later sync produces the same health context hash, the app reuses the previous AI-backed analysis for the new sync and shows `AI reused`. If the health data changes, the app calls Firebase AI Logic or the configured local proxy with the current prompt. Local fallback explanations are saved for display, but only AI-backed analyses are reused across matching syncs.
-
-Sleep score is an Apple-style local estimate on a 100-point scale:
-
-- duration: up to 50 points against an 8-hour target
-- bedtime consistency: up to 30 points from saved sleep start times
-- interruptions: up to 20 points from awake duration and wake events
+Entering only a host such as `192.168.1.25` is accepted; the app normalizes it to `http://192.168.1.25:8790`.
 
 ## Build Check
 
 ```bash
-xcodebuild -project watch-probe-ios/WatchProbe.xcodeproj -scheme WatchProbe -configuration Debug -sdk iphoneos -derivedDataPath /private/tmp/WatchProbeDerivedData CODE_SIGNING_ALLOWED=NO build
+xcodebuild \
+  -project watch-probe-ios/WatchProbe.xcodeproj \
+  -scheme WatchProbe \
+  -configuration Debug \
+  -sdk iphoneos \
+  -derivedDataPath /private/tmp/WatchProbeDerivedData \
+  CODE_SIGNING_ALLOWED=NO \
+  build
 ```
 
-## Next Work
+## Notes For Future Maintainers
 
-- Add an automatic measurement settings audit that reads HR/BP/HRV/SpO2/glucose/temperature switch state and shows enabled/disabled on the dashboard.
-- Add optional enable/configure controls for supported automatic watch-side measurement intervals.
-- Add per-type sync watermarks after direct read timestamps/CRCs are confirmed.
-- Improve export flow if iOS share-sheet provider warnings continue on device.
-
-The bundled `VeepooBleSDK.framework` was copied from:
-
-`/Users/vivekmatta/Desktop/iOS_Ble_SDK/iOS_sdk_source/Demo/VeepooBleSDKDemo/VeepooBleSDKDemo/VeepooBleSDK.framework`
+- SDK data commands must remain serial.
+- Physical watch sync requires a real iPhone.
+- Simulator support would require a separate simulator-safe target or SDK stubs.
+- Keep credentials and exported research data out of Git.
+- Replace Google/Firebase configuration with lab-owned values before re-enabling calendar or Firebase-backed flows.

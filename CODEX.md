@@ -8,7 +8,7 @@ Always read these before making changes:
 2. `docs/watch-first-connection.md`
 3. `watch-probe-ios/README.md`
 
-Preserve `secrets/google-service-account.json`. Do not print its contents.
+Credential files must stay local under ignored paths such as `secrets/` or `.env.*`. Do not print or commit their contents.
 
 The previous Expo app, research dashboard, Node server, mock fixtures, and bundled assets were intentionally removed. The active app is `watch-probe-ios/WatchProbe.xcodeproj`.
 

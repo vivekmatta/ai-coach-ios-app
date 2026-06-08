@@ -7,7 +7,7 @@ import path from "node:path";
 const port = Number(process.env.COACH_PROXY_PORT || 8790);
 const host = process.env.COACH_PROXY_HOST || "0.0.0.0";
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || "secrets/google-service-account.json";
+const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || "";
 const model = process.env.VERTEXAI_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const vertexLocation = process.env.VERTEXAI_LOCATION || "us-central1";
 const token = process.env.COACH_PROXY_TOKEN || "";
@@ -15,9 +15,11 @@ let serviceAccount = null;
 let accessTokenCache = null;
 
 try {
-  const resolvedPath = path.resolve(serviceAccountPath);
-  if (fs.existsSync(resolvedPath)) {
-    serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, "utf8"));
+  if (serviceAccountPath) {
+    const resolvedPath = path.resolve(serviceAccountPath);
+    if (fs.existsSync(resolvedPath)) {
+      serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, "utf8"));
+    }
   }
 } catch (error) {
   console.warn(`Could not load service account JSON: ${error.message}`);

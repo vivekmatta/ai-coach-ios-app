@@ -1,8 +1,25 @@
 # Credentials / secrets
 *.json
+!*.example.json
 .env
+.env.*
+!.env.example
+*.p8
+*.pem
+*.key
+*.cer
+*.mobileprovision
+GoogleService-Info.plist
 google-api-key.json
 secrets/
+
+# Local research exports / databases
+WatchResearchData/
+sync-*.json
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
 
 # macOS
 .DS_Store

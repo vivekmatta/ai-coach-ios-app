@@ -136,7 +136,7 @@ If no sleep data appears, next checks are:
 Run the proxy from the repo root:
 
 ```bash
-GOOGLE_APPLICATION_CREDENTIALS=secrets/google-service-account.json node server/coach-ai-proxy.mjs
+GEMINI_API_KEY="<your-gemini-api-key>" node server/coach-ai-proxy.mjs
 ```
 
 Expected startup log:
@@ -144,6 +144,8 @@ Expected startup log:
 ```text
 Coach AI proxy listening on http://0.0.0.0:8790
 ```
+
+Vertex AI service-account mode is also supported with `GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/to/service-account.json"`. Keep service-account JSON files local and out of Git.
 
 In the app, use the Mac LAN URL, for example `http://10.105.80.5:8790`. If the log shows `Local network prohibited` or `NSURLErrorDomain Code=-1009`, enable iOS local network access for WatchProbe in `Settings -> Privacy & Security -> Local Network`. If WatchProbe is not listed, delete the app from the phone and reinstall from Xcode so iOS shows the permission prompt again.
 

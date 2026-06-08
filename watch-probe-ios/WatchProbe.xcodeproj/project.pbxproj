@@ -9,19 +9,6 @@
 /* Begin PBXBuildFile section */
 		2A0000012C00000000000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000022C00000000000001 /* AppDelegate.swift */; };
 		2A0000032C00000000000001 /* ProbeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000042C00000000000001 /* ProbeViewController.swift */; };
-		2A0000702C00000000000001 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000712C00000000000001 /* SceneDelegate.swift */; };
-		2A0000722C00000000000001 /* WatchResearchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000732C00000000000001 /* WatchResearchStore.swift */; };
-		2A0000742C00000000000001 /* WatchProbeDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000752C00000000000001 /* WatchProbeDashboardView.swift */; };
-		2A0000762C00000000000001 /* AICoachModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000772C00000000000001 /* AICoachModels.swift */; };
-		2A0000782C00000000000001 /* AICoachService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000792C00000000000001 /* AICoachService.swift */; };
-		2A00007A2C00000000000001 /* HealthDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A00007B2C00000000000001 /* HealthDataStore.swift */; };
-		2A00007C2C00000000000001 /* CoachReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A00007D2C00000000000001 /* CoachReminderScheduler.swift */; };
-		2A00007E2C00000000000001 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2A00007F2C00000000000001 /* FirebaseCore */; };
-		2A0000802C00000000000001 /* FirebaseAILogic in Frameworks */ = {isa = PBXBuildFile; productRef = 2A0000812C00000000000001 /* FirebaseAILogic */; };
-		2A00008A2C00000000000001 /* CoachActionServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000892C00000000000001 /* CoachActionServices.swift */; };
-		2A00008C2C00000000000001 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 2A00008B2C00000000000001 /* GoogleSignIn */; };
-		2A0000842C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */; };
-		2A0000862C00000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2A0000852C00000000000001 /* Assets.xcassets */; };
 		2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000062C00000000000001 /* VeepooBleSDK.framework */; };
 		2A0000302C00000000000001 /* ABParTool.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000202C00000000000001 /* ABParTool.framework */; };
 		2A0000332C00000000000001 /* ZipZap.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0000232C00000000000001 /* ZipZap.framework */; };
@@ -45,6 +32,19 @@
 		2A00005C2C00000000000001 /* NSObject+MJKeyValue.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A00004C2C00000000000001 /* NSObject+MJKeyValue.m */; };
 		2A00005D2C00000000000001 /* NSObject+MJProperty.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A00004D2C00000000000001 /* NSObject+MJProperty.m */; };
 		2A00005E2C00000000000001 /* NSString+MJExtension.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A00004E2C00000000000001 /* NSString+MJExtension.m */; };
+		2A0000702C00000000000001 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000712C00000000000001 /* SceneDelegate.swift */; };
+		2A0000722C00000000000001 /* WatchResearchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000732C00000000000001 /* WatchResearchStore.swift */; };
+		2A0000742C00000000000001 /* WatchProbeDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000752C00000000000001 /* WatchProbeDashboardView.swift */; };
+		2A0000762C00000000000001 /* AICoachModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000772C00000000000001 /* AICoachModels.swift */; };
+		2A0000782C00000000000001 /* AICoachService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000792C00000000000001 /* AICoachService.swift */; };
+		2A00007A2C00000000000001 /* HealthDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A00007B2C00000000000001 /* HealthDataStore.swift */; };
+		2A00007C2C00000000000001 /* CoachReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A00007D2C00000000000001 /* CoachReminderScheduler.swift */; };
+		2A00007E2C00000000000001 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2A00007F2C00000000000001 /* FirebaseCore */; };
+		2A0000802C00000000000001 /* FirebaseAILogic in Frameworks */ = {isa = PBXBuildFile; productRef = 2A0000812C00000000000001 /* FirebaseAILogic */; };
+		2A0000842C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */; };
+		2A0000862C00000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2A0000852C00000000000001 /* Assets.xcassets */; };
+		2A00008A2C00000000000001 /* CoachActionServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000892C00000000000001 /* CoachActionServices.swift */; };
+		2A00008C2C00000000000001 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 2A00008B2C00000000000001 /* GoogleSignIn */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -53,12 +53,12 @@
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 10;
-				files = (
-					2A0000342C00000000000001 /* ABParTool.framework in Embed Frameworks */,
-					2A0000352C00000000000001 /* JLDialUnit.framework in Embed Frameworks */,
-					2A0000372C00000000000001 /* ZipZap.framework in Embed Frameworks */,
-					2A0000392C00000000000001 /* GRDFUSDK.framework in Embed Frameworks */,
-				);
+			files = (
+				2A0000342C00000000000001 /* ABParTool.framework in Embed Frameworks */,
+				2A0000352C00000000000001 /* JLDialUnit.framework in Embed Frameworks */,
+				2A0000372C00000000000001 /* ZipZap.framework in Embed Frameworks */,
+				2A0000392C00000000000001 /* GRDFUSDK.framework in Embed Frameworks */,
+			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -67,16 +67,6 @@
 /* Begin PBXFileReference section */
 		2A0000022C00000000000001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		2A0000042C00000000000001 /* ProbeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProbeViewController.swift; sourceTree = "<group>"; };
-		2A0000712C00000000000001 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
-		2A0000732C00000000000001 /* WatchResearchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchResearchStore.swift; sourceTree = "<group>"; };
-		2A0000752C00000000000001 /* WatchProbeDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchProbeDashboardView.swift; sourceTree = "<group>"; };
-		2A0000772C00000000000001 /* AICoachModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachModels.swift; sourceTree = "<group>"; };
-		2A0000792C00000000000001 /* AICoachService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachService.swift; sourceTree = "<group>"; };
-		2A00007B2C00000000000001 /* HealthDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataStore.swift; sourceTree = "<group>"; };
-		2A00007D2C00000000000001 /* CoachReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachReminderScheduler.swift; sourceTree = "<group>"; };
-		2A0000892C00000000000001 /* CoachActionServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachActionServices.swift; sourceTree = "<group>"; };
-		2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "VPBleCentralManage+WatchProbeRestoreSilencer.m"; sourceTree = "<group>"; };
-		2A0000852C00000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2A0000062C00000000000001 /* VeepooBleSDK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = VeepooBleSDK.framework; sourceTree = "<group>"; };
 		2A0000092C00000000000001 /* WatchProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A00000A2C00000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -101,6 +91,16 @@
 		2A00004C2C00000000000001 /* NSObject+MJKeyValue.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSObject+MJKeyValue.m"; sourceTree = "<group>"; };
 		2A00004D2C00000000000001 /* NSObject+MJProperty.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSObject+MJProperty.m"; sourceTree = "<group>"; };
 		2A00004E2C00000000000001 /* NSString+MJExtension.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSString+MJExtension.m"; sourceTree = "<group>"; };
+		2A0000712C00000000000001 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		2A0000732C00000000000001 /* WatchResearchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchResearchStore.swift; sourceTree = "<group>"; };
+		2A0000752C00000000000001 /* WatchProbeDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchProbeDashboardView.swift; sourceTree = "<group>"; };
+		2A0000772C00000000000001 /* AICoachModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachModels.swift; sourceTree = "<group>"; };
+		2A0000792C00000000000001 /* AICoachService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachService.swift; sourceTree = "<group>"; };
+		2A00007B2C00000000000001 /* HealthDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataStore.swift; sourceTree = "<group>"; };
+		2A00007D2C00000000000001 /* CoachReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachReminderScheduler.swift; sourceTree = "<group>"; };
+		2A0000832C00000000000001 /* VPBleCentralManage+WatchProbeRestoreSilencer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "VPBleCentralManage+WatchProbeRestoreSilencer.m"; sourceTree = "<group>"; };
+		2A0000852C00000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		2A0000892C00000000000001 /* CoachActionServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachActionServices.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,13 +108,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-					2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */,
-					2A0000302C00000000000001 /* ABParTool.framework in Frameworks */,
-					2A0000332C00000000000001 /* ZipZap.framework in Frameworks */,
-					2A0000382C00000000000001 /* GRDFUSDK.framework in Frameworks */,
-					2A00007E2C00000000000001 /* FirebaseCore in Frameworks */,
-					2A0000802C00000000000001 /* FirebaseAILogic in Frameworks */,
-					2A00008C2C00000000000001 /* GoogleSignIn in Frameworks */,
+				2A0000052C00000000000001 /* VeepooBleSDK.framework in Frameworks */,
+				2A0000302C00000000000001 /* ABParTool.framework in Frameworks */,
+				2A0000332C00000000000001 /* ZipZap.framework in Frameworks */,
+				2A0000382C00000000000001 /* GRDFUSDK.framework in Frameworks */,
+				2A00007E2C00000000000001 /* FirebaseCore in Frameworks */,
+				2A0000802C00000000000001 /* FirebaseAILogic in Frameworks */,
+				2A00008C2C00000000000001 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -220,13 +220,13 @@
 			dependencies = (
 			);
 			name = WatchProbe;
-			productName = WatchProbe;
-			productReference = 2A0000092C00000000000001 /* WatchProbe.app */;
 			packageProductDependencies = (
 				2A00007F2C00000000000001 /* FirebaseCore */,
 				2A0000812C00000000000001 /* FirebaseAILogic */,
 				2A00008B2C00000000000001 /* GoogleSignIn */,
 			);
+			productName = WatchProbe;
+			productReference = 2A0000092C00000000000001 /* WatchProbe.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -253,13 +253,13 @@
 				Base,
 			);
 			mainGroup = 2A00000D2C00000000000001;
-			productRefGroup = 2A00000F2C00000000000001 /* Products */;
-			projectDirPath = "";
-			projectRoot = "";
 			packageReferences = (
 				2A0000822C00000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				2A00008D2C00000000000001 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
+			productRefGroup = 2A00000F2C00000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
 			targets = (
 				2A0000102C00000000000001 /* WatchProbe */,
 			);
@@ -434,7 +434,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8XNAA8C9KP;
+				DEVELOPMENT_TEAM = "";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/WatchProbe",
@@ -466,7 +466,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8XNAA8C9KP;
+				DEVELOPMENT_TEAM = "";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/WatchProbe",
