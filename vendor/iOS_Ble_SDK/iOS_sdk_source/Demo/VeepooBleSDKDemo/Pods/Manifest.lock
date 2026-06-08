@@ -1,0 +1,22 @@
+PODS:
+  - FMDB (2.6.2):
+    - FMDB/standard (= 2.6.2)
+  - FMDB/standard (2.6.2)
+  - MJExtension (3.0.15.1)
+
+DEPENDENCIES:
+  - FMDB
+  - MJExtension
+
+SPEC REPOS:
+  trunk:
+    - FMDB
+    - MJExtension
+
+SPEC CHECKSUMS:
+  FMDB: 854a0341b4726e53276f2a8996f06f1b80f9259a
+  MJExtension: 19bc33ce2eee2d319760f5622562cf581a6ff756
+
+PODFILE CHECKSUM: c7d68bcb7a191392d53412e60f0089fedea9533e
+
+COCOAPODS: 1.16.2

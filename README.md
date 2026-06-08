@@ -10,7 +10,26 @@ The active app is `watch-probe-ios/WatchProbe.xcodeproj`. The Node script in `se
 - `server/coach-ai-proxy.mjs` - local HTTP proxy that calls Gemini or Vertex AI and returns structured coach analysis.
 - `docs/veepoo-sdk-ios-api.md` - copied vendor SDK API reference with local integration notes.
 - `docs/watch-first-connection.md` - hardware connection notes, verified watch behavior, and debugging checklist.
+- `vendor/iOS_Ble_SDK/` - manufacturer iOS SDK package and demo app, vendored for handoff reference.
 - `CODEX.md` - working notes for future coding agents or maintainers.
+
+## Manufacturer SDK Source
+
+The manufacturer SDK package is vendored in this repo at:
+
+```text
+vendor/iOS_Ble_SDK
+```
+
+It was copied from the original development Mac path:
+
+```text
+/Users/vivekmatta/Desktop/iOS_Ble_SDK
+```
+
+The nested `.git` history, Xcode user state, and `.DS_Store` files were intentionally excluded. The vendored SDK is useful reference material because it contains the manufacturer demo app, framework versions, bundled third-party libraries, and fuller SDK package.
+
+The local API notes copied into this repo are in `docs/veepoo-sdk-ios-api.md`, and the copied frameworks already needed by `WatchProbe` are committed under `watch-probe-ios/WatchProbe/`.
 
 ## Prerequisites
 

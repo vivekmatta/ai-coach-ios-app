@@ -53,6 +53,22 @@ The phone cannot use `localhost` for the Mac proxy. Use the Mac's LAN IP address
 
 The verified development watch was `ES02 / 1B:89:F9:42:CF:54`.
 
+## Manufacturer SDK Source
+
+The vendor frameworks committed in `WatchProbe/` came from the manufacturer SDK package now vendored at:
+
+```text
+../vendor/iOS_Ble_SDK
+```
+
+That package was copied from this path on the original development Mac:
+
+```text
+/Users/vivekmatta/Desktop/iOS_Ble_SDK
+```
+
+The nested `.git` history, Xcode user state, and `.DS_Store` files were intentionally excluded from the vendored copy. It contains the manufacturer demo app and fuller SDK reference material.
+
 ## Local Data
 
 The app writes sync files inside the app sandbox:
